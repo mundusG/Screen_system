@@ -1,0 +1,157 @@
+﻿{
+    "system": {
+        "name": "大屏推理显示系统",
+        "version": "1.0.0",
+        "maxCameras": 8,
+        "displayLayout": {
+            "rows": 2,
+            "cols": 4
+        }
+    },
+    "cameras": [
+        {
+            "cameraId": 0,
+            "name": "摄像头 1",
+            "source": "0",
+            "modelPath": "models/camera_0.onnx",
+            "enabled": true,
+            "confidenceThreshold": 0.5,
+            "nmsThreshold": 0.45,
+            "inputWidth": 640,
+            "inputHeight": 640,
+            "smoothingAlpha": 0.3,
+            "trackMaxLost": 5,
+            "inferenceIntervalMs": 1000,
+            "classColors": {
+                "0": "#00FF00",
+                "1": "#FF0000"
+            }
+        },
+        {
+            "cameraId": 1,
+            "name": "摄像头 2",
+            "source": "1",
+            "modelPath": "models/camera_1.onnx",
+            "enabled": true,
+            "confidenceThreshold": 0.5,
+            "nmsThreshold": 0.45,
+            "inputWidth": 640,
+            "inputHeight": 640,
+            "smoothingAlpha": 0.3,
+            "trackMaxLost": 5,
+            "inferenceIntervalMs": 1000,
+            "classColors": {
+                "0": "#00FF00",
+                "1": "#FF0000"
+            }
+        },
+        {
+            "cameraId": 2,
+            "name": "摄像头 3",
+            "source": "2",
+            "modelPath": "models/camera_2.onnx",
+            "enabled": true,
+            "confidenceThreshold": 0.5,
+            "nmsThreshold": 0.45,
+            "inputWidth": 640,
+            "inputHeight": 640,
+            "smoothingAlpha": 0.3,
+            "trackMaxLost": 5,
+            "inferenceIntervalMs": 1000,
+            "classColors": {
+                "0": "#00FF00",
+                "1": "#FF0000"
+            }
+        },
+        {
+            "cameraId": 3,
+            "name": "摄像头 4",
+            "source": "3",
+            "modelPath": "models/camera_3.onnx",
+            "enabled": true,
+            "confidenceThreshold": 0.5,
+            "nmsThreshold": 0.45,
+            "inputWidth": 640,
+            "inputHeight": 640,
+            "smoothingAlpha": 0.3,
+            "trackMaxLost": 5,
+            "inferenceIntervalMs": 1000,
+            "classColors": {
+                "0": "#00FF00",
+                "1": "#FF0000"
+            }
+        },
+        {
+            "cameraId": 4,
+            "name": "摄像头 5",
+            "source": "4",
+            "modelPath": "models/camera_4.onnx",
+            "enabled": true,
+            "confidenceThreshold": 0.5,
+            "nmsThreshold": 0.45,
+            "inputWidth": 640,
+            "inputHeight": 640,
+            "smoothingAlpha": 0.3,
+            "trackMaxLost": 5,
+            "inferenceIntervalMs": 1000,
+            "classColors": {
+                "0": "#00FF00",
+                "1": "#FF0000"
+            }
+        },
+        {
+            "cameraId": 5,
+            "name": "摄像头 6",
+            "source": "5",
+            "modelPath": "models/camera_5.onnx",
+            "enabled": true,
+            "confidenceThreshold": 0.5,
+            "nmsThreshold": 0.45,
+            "inputWidth": 640,
+            "inputHeight": 640,
+            "smoothingAlpha": 0.3,
+            "trackMaxLost": 5,
+            "inferenceIntervalMs": 1000,
+            "classColors": {
+                "0": "#00FF00",
+                "1": "#FF0000"
+            }
+        },
+        {
+            "cameraId": 6,
+            "name": "摄像头 7",
+            "source": "6",
+            "modelPath": "models/camera_6.onnx",
+            "enabled": true,
+            "confidenceThreshold": 0.5,
+            "nmsThreshold": 0.45,
+            "inputWidth": 640,
+            "inputHeight": 640,
+            "smoothingAlpha": 0.3,
+            "trackMaxLost": 5,
+            "inferenceIntervalMs": 1000,
+            "classColors": {
+                "0": "#00FF00",
+                "1": "#FF0000"
+            }
+        },
+        {
+            "cameraId": 7,
+            "name": "摄像头 8",
+            "source": "7",
+            "modelPath": "models/camera_7.onnx",
+            "enabled": true,
+            "confidenceThreshold": 0.5,
+            "nmsThreshold": 0.45,
+            "inputWidth": 640,
+            "inputHeight": 640,
+            "smoothingAlpha": 0.3,
+            "trackMaxLost": 5,
+            "inferenceIntervalMs": 1000,
+            "classColors": {
+                "0": "#00FF00",
+                "1": "#FF0000"
+            }
+        }
+    ]
+}
