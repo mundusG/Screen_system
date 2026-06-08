@@ -1,16 +1,15 @@
-﻿#ifndef MAINWINDOW_H
+#ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
 #include <QMainWindow>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QVBoxLayout>
 #include <QVector>
 #include <QMap>
 #include <QLabel>
-#include <QStatusBar>
 #include <QTimer>
 #include "Types.h"
-#include "StatsPanel.h"
 
 class VideoWidget;
 class CameraThread;
@@ -18,8 +17,10 @@ class InferenceEngine;
 class SmoothingFilter;
 class ConfigManager;
 class SettingsDialog;
+class SidebarWidget;
+class BottomControlBar;
+class AlertPanel;
 
-/// Main application window with 2x4 camera grid + right-side stats panel
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -47,19 +48,29 @@ private slots:
     void onDisplayResultReady(const DisplayResult& result);
     void onFpsUpdated(int cameraId, double fps);
     void onCameraError(const QString& message);
+    void onCameraClicked(int cameraId);
+    void onGridModeChanged(int mode);
+    void onToggleFullscreen();
 
 private:
     void setupUI();
     bool setupCameraPipeline(int cameraId, const CameraConfig& config);
     void teardownCameraPipeline(int cameraId);
-    void updateStatusBar();
+    void updatePanels();
+    void applyGridLayout(int mode);
 
-    // UI
-    QWidget*              mCentralWidget;
-    QHBoxLayout*          mRootLayout;     // left grid | right panel
-    QGridLayout*          mGridLayout;
+    // UI - main structure
+    QWidget*            mCentralWidget;
+    QHBoxLayout*        mRootLayout;
+    SidebarWidget*      mSidebar;
+    QWidget*            mCenterContainer;
+    QVBoxLayout*        mCenterLayout;
+    QGridLayout*        mGridLayout;
+    QWidget*            mGridContainer;
+    BottomControlBar*   mBottomBar;
+    AlertPanel*         mAlertPanel;
+
     QVector<VideoWidget*> mVideoWidgets;
-    StatsPanel*           mStatsPanel;
 
     // Pipeline components
     QMap<int, CameraThread*>    mCameraThreads;
@@ -71,6 +82,9 @@ private:
     bool    mRunning;
     qint64  mStartTime;
     QTimer* mStatusTimer;
+
+    int     mSelectedCamera;
+    int     mGridMode;
 };
 
 #endif // MAINWINDOW_H

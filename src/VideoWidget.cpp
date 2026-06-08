@@ -1,4 +1,5 @@
 #include "VideoWidget.h"
+#include "Theme.h"
 #include <QPainter>
 #include <QPen>
 #include <QFont>
@@ -11,7 +12,6 @@ VideoWidget::VideoWidget(int cameraId, const QString& title, QWidget* parent)
     , mCameraId(cameraId)
     , mTitle(title)
 {
-    // Enforce 16:9 aspect ratio via size policy
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setMinimumSize(160, 90);
     setCursor(Qt::PointingHandCursor);
@@ -21,13 +21,33 @@ VideoWidget::VideoWidget(int cameraId, const QString& title, QWidget* parent)
 
     mClassColors[0] = QColor(0,   255, 0);
     mClassColors[1] = QColor(255, 0,   0);
+
+    mTickTimer = new QTimer(this);
+    connect(mTickTimer, &QTimer::timeout, this, [this]() {
+        if (mLivePulseDir) {
+            mLivePulse -= 0.05f;
+            if (mLivePulse <= 0.6f) mLivePulseDir = false;
+        } else {
+            mLivePulse += 0.05f;
+            if (mLivePulse >= 1.0f) mLivePulseDir = true;
+        }
+        update();
+    });
+    mTickTimer->start(80);
 }
 
 VideoWidget::~VideoWidget() = default;
 
-// Keep widget at 16:9
 int VideoWidget::heightForWidth(int w) const { return w * 9 / 16; }
 bool VideoWidget::hasHeightForWidth() const  { return true; }
+
+void VideoWidget::setSelected(bool selected)
+{
+    if (mSelected != selected) {
+        mSelected = selected;
+        update();
+    }
+}
 
 void VideoWidget::setConfidenceThreshold(float threshold)
 {
@@ -106,7 +126,6 @@ void VideoWidget::paintEvent(QPaintEvent*)
     const int w = width();
     const int h = height();
 
-    // Compute 16:9 rect centered in widget
     int drawW = w;
     int drawH = w * 9 / 16;
     if (drawH > h) { drawH = h; drawW = h * 16 / 9; }
@@ -114,8 +133,8 @@ void VideoWidget::paintEvent(QPaintEvent*)
     const int oy = (h - drawH) / 2;
     const QRect videoRect(ox, oy, drawW, drawH);
 
-    // Dark semi-transparent background
-    painter.fillRect(rect(), QColor(20, 25, 35, 200));
+    // Dark background
+    painter.fillRect(rect(), Theme::tileBg());
 
     {
         QMutexLocker locker(&mFrameMutex);
@@ -124,7 +143,7 @@ void VideoWidget::paintEvent(QPaintEvent*)
             if (!img.isNull()) {
                 QImage scaled = img.scaled(drawW, drawH, Qt::IgnoreAspectRatio,
                                            Qt::SmoothTransformation);
-                painter.setOpacity(0.88);
+                painter.setOpacity(0.92);
                 painter.drawImage(ox, oy, scaled);
                 painter.setOpacity(1.0);
 
@@ -149,64 +168,214 @@ void VideoWidget::paintEvent(QPaintEvent*)
                         mClassColors[det.classId] = color;
                     }
 
-                    painter.setPen(QPen(color, 2.5));
+                    // Detection box with corner accents
+                    painter.setPen(QPen(color, 2.0));
                     painter.setBrush(Qt::NoBrush);
                     painter.drawRect(QRectF(bx, by, bw, bh));
 
+                    // Corner accents (thicker short lines at corners)
+                    float cornerLen = std::min(bw, bh) * 0.15f;
+                    cornerLen = std::max(cornerLen, 6.0f);
+                    QPen cornerPen(color, 3.0);
+                    painter.setPen(cornerPen);
+                    // Top-left
+                    painter.drawLine(QPointF(bx, by), QPointF(bx + cornerLen, by));
+                    painter.drawLine(QPointF(bx, by), QPointF(bx, by + cornerLen));
+                    // Top-right
+                    painter.drawLine(QPointF(bx + bw, by), QPointF(bx + bw - cornerLen, by));
+                    painter.drawLine(QPointF(bx + bw, by), QPointF(bx + bw, by + cornerLen));
+                    // Bottom-left
+                    painter.drawLine(QPointF(bx, by + bh), QPointF(bx + cornerLen, by + bh));
+                    painter.drawLine(QPointF(bx, by + bh), QPointF(bx, by + bh - cornerLen));
+                    // Bottom-right
+                    painter.drawLine(QPointF(bx + bw, by + bh), QPointF(bx + bw - cornerLen, by + bh));
+                    painter.drawLine(QPointF(bx + bw, by + bh), QPointF(bx + bw, by + bh - cornerLen));
+
+                    // Label badge
                     QString label = QString("%1 %2%")
                         .arg(det.classId)
                         .arg(det.confidence * 100, 0, 'f', 0);
-                    QFont font("Monospace", 10, QFont::Bold);
+                    QFont font("Monospace", 9, QFont::Bold);
                     painter.setFont(font);
                     QFontMetrics fm(font);
-                    int textW = fm.horizontalAdvance(label) + 8;
+                    int textW = fm.horizontalAdvance(label) + 10;
                     int textH = fm.height() + 4;
-                    painter.setBrush(color);
+
+                    QColor badgeBg = color;
+                    badgeBg.setAlpha(200);
+                    painter.setBrush(badgeBg);
                     painter.setPen(Qt::NoPen);
-                    painter.drawRect(QRectF(bx, by - textH, textW, textH));
+                    painter.drawRoundedRect(QRectF(bx, by - textH - 1, textW, textH), 2, 2);
                     painter.setPen(Qt::white);
-                    painter.drawText(QRectF(bx + 4, by - textH, textW - 4, textH),
+                    painter.drawText(QRectF(bx + 5, by - textH - 1, textW - 5, textH),
                                      Qt::AlignVCenter | Qt::AlignLeft, label);
 
                     if (det.trackId >= 0) {
-                        QFont smallFont("Monospace", 8);
+                        QFont smallFont("Monospace", 7);
                         painter.setFont(smallFont);
-                        painter.setPen(Qt::white);
+                        painter.setPen(QColor(200, 220, 255, 200));
                         painter.drawText(QPointF(bx + 4, by + bh - 4),
                                          QString("ID:%1").arg(det.trackId));
                     }
                 }
             }
         } else {
-            painter.setPen(QColor(120, 130, 140));
+            // No signal state
+            painter.setPen(Theme::textMuted());
             QFont font = painter.font();
-            font.setPointSize(14);
+            font.setPointSize(13);
             painter.setFont(font);
-            painter.drawText(videoRect, Qt::AlignCenter, QString::fromUtf8("无视频信号"));
+            painter.drawText(videoRect, Qt::AlignCenter, QString::fromUtf8("NO SIGNAL"));
+
+            // Subtle scan line effect
+            painter.setPen(QPen(QColor(30, 50, 80, 30), 1));
+            for (int y = videoRect.top(); y < videoRect.bottom(); y += 4) {
+                painter.drawLine(videoRect.left(), y, videoRect.right(), y);
+            }
         }
     }
 
-    // Camera title — always top-left of widget
-    {
-        QFont titleFont;
-        titleFont.setPointSize(12);
-        titleFont.setBold(true);
-        painter.setFont(titleFont);
-        QFontMetrics fm(titleFont);
-        int titleW = fm.horizontalAdvance(mTitle) + 20;
-        int titleH = fm.height() + 10;
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(QColor(0, 0, 0, 150));
-        painter.drawRect(0, 0, titleW, titleH);
-        painter.setPen(Qt::white);
-        painter.drawText(QRectF(8, 0, titleW - 8, titleH),
-                         Qt::AlignVCenter, mTitle);
+    drawTitleBadge(painter);
+    drawLiveIndicator(painter, videoRect);
+    drawTimestamp(painter, videoRect);
+    drawStatusOverlay(painter, videoRect);
+    drawBorder(painter, videoRect);
+}
+
+void VideoWidget::drawLiveIndicator(QPainter& p, const QRect& videoRect)
+{
+    if (!mHasSignal) return;
+
+    int rx = videoRect.right() - 60;
+    int ry = videoRect.top() + 6;
+
+    // "LIVE" badge
+    QFont font("Monospace", 8, QFont::Bold);
+    p.setFont(font);
+
+    QColor dotColor = Theme::liveGreen();
+    dotColor.setAlphaF(mLivePulse);
+
+    // Background pill
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(0, 0, 0, 160));
+    p.drawRoundedRect(rx, ry, 54, 18, 9, 9);
+
+    // Green dot
+    p.setBrush(dotColor);
+    p.drawEllipse(QPointF(rx + 10, ry + 9), 4, 4);
+
+    // "LIVE" text
+    p.setPen(Theme::liveGreen());
+    p.drawText(QRectF(rx + 18, ry, 34, 18), Qt::AlignVCenter, "LIVE");
+}
+
+void VideoWidget::drawTimestamp(QPainter& p, const QRect& videoRect)
+{
+    QString timeStr = QDateTime::currentDateTime().toString("HH:mm:ss");
+    QFont font("Monospace", 8);
+    p.setFont(font);
+    QFontMetrics fm(font);
+
+    int tw = fm.horizontalAdvance(timeStr) + 12;
+    int th = fm.height() + 6;
+    int tx = videoRect.left() + 4;
+    int ty = videoRect.bottom() - th - 4;
+
+    p.setPen(Qt::NoPen);
+    p.setBrush(Theme::tileOverlayBg());
+    p.drawRoundedRect(tx, ty, tw, th, 3, 3);
+
+    p.setPen(Theme::textSecondary());
+    p.drawText(QRectF(tx + 6, ty, tw - 6, th), Qt::AlignVCenter, timeStr);
+}
+
+void VideoWidget::drawStatusOverlay(QPainter& p, const QRect& videoRect)
+{
+    if (mCurrentFps <= 0.0 && mCurrentInferenceTimeMs <= 0.0f) return;
+
+    QString info;
+    if (mCurrentFps > 0.0)
+        info += QString("%1 FPS").arg(mCurrentFps, 0, 'f', 1);
+    if (mCurrentInferenceTimeMs > 0.0f) {
+        if (!info.isEmpty()) info += " | ";
+        info += QString("%1ms").arg(static_cast<int>(mCurrentInferenceTimeMs));
+    }
+    if (mDetectionCount > 0) {
+        if (!info.isEmpty()) info += " | ";
+        info += QString::fromUtf8("\xe7\x9b\xae\xe6\xa0\x87:%1").arg(mDetectionCount);
     }
 
-    // Border
-    painter.setPen(QPen(QColor(60, 70, 80), 1));
-    painter.setBrush(Qt::NoBrush);
-    painter.drawRect(videoRect.adjusted(0, 0, -1, -1));
+    QFont font("Monospace", 7);
+    p.setFont(font);
+    QFontMetrics fm(font);
+
+    int tw = fm.horizontalAdvance(info) + 12;
+    int th = fm.height() + 6;
+    int tx = videoRect.right() - tw - 4;
+    int ty = videoRect.bottom() - th - 4;
+
+    p.setPen(Qt::NoPen);
+    p.setBrush(Theme::tileOverlayBg());
+    p.drawRoundedRect(tx, ty, tw, th, 3, 3);
+
+    p.setPen(Theme::accent());
+    p.drawText(QRectF(tx + 6, ty, tw - 6, th), Qt::AlignVCenter, info);
+}
+
+void VideoWidget::drawTitleBadge(QPainter& p)
+{
+    QFont titleFont;
+    titleFont.setPointSize(10);
+    titleFont.setBold(true);
+    p.setFont(titleFont);
+    QFontMetrics fm(titleFont);
+
+    int titleW = fm.horizontalAdvance(mTitle) + 32;
+    int titleH = fm.height() + 8;
+
+    // Camera icon (small rect with lens)
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(0, 0, 0, 180));
+    p.drawRoundedRect(2, 2, titleW, titleH, 3, 3);
+
+    // Accent left edge
+    p.setBrush(Theme::accent());
+    p.drawRect(2, 2, 3, titleH);
+
+    // Camera icon drawn as small geometric shape
+    int iconX = 10;
+    int iconY = titleH / 2 - 2;
+    p.setPen(QPen(Theme::accent(), 1.5));
+    p.setBrush(Qt::NoBrush);
+    p.drawRect(iconX, iconY, 8, 6);
+    p.drawEllipse(QPointF(iconX + 4, iconY + 3), 2, 2);
+
+    // Title text
+    p.setPen(Theme::textPrimary());
+    p.drawText(QRectF(24, 2, titleW - 24, titleH),
+               Qt::AlignVCenter, mTitle);
+}
+
+void VideoWidget::drawBorder(QPainter& p, const QRect& videoRect)
+{
+    if (mSelected) {
+        // Glow effect: outer soft border
+        QPen glowPen(Theme::accentGlow(), 4);
+        p.setPen(glowPen);
+        p.setBrush(Qt::NoBrush);
+        p.drawRect(videoRect.adjusted(-2, -2, 2, 2));
+
+        // Inner bright border
+        QPen borderPen(Theme::accentBorderBright(), 1.5);
+        p.setPen(borderPen);
+        p.drawRect(videoRect.adjusted(0, 0, -1, -1));
+    } else {
+        QPen borderPen(Theme::tileBorderNormal(), 1);
+        p.setPen(borderPen);
+        p.setBrush(Qt::NoBrush);
+        p.drawRect(videoRect.adjusted(0, 0, -1, -1));
+    }
 }
 
 void VideoWidget::mousePressEvent(QMouseEvent* event)

@@ -19,6 +19,9 @@ set(SOURCES
     src/MainWindow.cpp
     src/VideoWidget.cpp
     src/StatsPanel.cpp
+    src/SidebarWidget.cpp
+    src/BottomControlBar.cpp
+    src/AlertPanel.cpp
     src/CameraCapture.cpp
     src/InferenceEngine.cpp
     src/SmoothingFilter.cpp
@@ -28,9 +31,13 @@ set(SOURCES
 
 set(HEADERS
     src/Types.h
+    src/Theme.h
     src/MainWindow.h
     src/VideoWidget.h
     src/StatsPanel.h
+    src/SidebarWidget.h
+    src/BottomControlBar.h
+    src/AlertPanel.h
     src/CameraCapture.h
     src/InferenceEngine.h
     src/SmoothingFilter.h

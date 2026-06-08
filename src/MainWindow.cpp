@@ -1,61 +1,47 @@
-﻿#include "MainWindow.h"
+#include "MainWindow.h"
 #include "VideoWidget.h"
-#include "StatsPanel.h"
+#include "SidebarWidget.h"
+#include "BottomControlBar.h"
+#include "AlertPanel.h"
 #include "CameraCapture.h"
 #include "InferenceEngine.h"
 #include "SmoothingFilter.h"
 #include "ConfigManager.h"
 #include "SettingsDialog.h"
+#include "Theme.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QGridLayout>
-#include <QMenuBar>
-#include <QMenu>
-#include <QAction>
 #include <QKeyEvent>
 #include <QCloseEvent>
 #include <QDateTime>
 #include <QApplication>
 #include <QDebug>
-#include <QLabel>
-#include <QPainter>
-#include <QPixmap>
-
-namespace {
-class BackgroundWidget : public QWidget {
-public:
-    explicit BackgroundWidget(QWidget* parent = nullptr)
-        : QWidget(parent), mBg(":/home_image.png") {}
-protected:
-    void paintEvent(QPaintEvent* event) override {
-        QPainter p(this);
-        p.drawPixmap(rect(), mBg);
-        QWidget::paintEvent(event);
-    }
-private:
-    QPixmap mBg;
-};
-} // namespace
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
     , mCentralWidget(nullptr)
     , mRootLayout(nullptr)
+    , mSidebar(nullptr)
+    , mCenterContainer(nullptr)
+    , mCenterLayout(nullptr)
     , mGridLayout(nullptr)
+    , mGridContainer(nullptr)
+    , mBottomBar(nullptr)
+    , mAlertPanel(nullptr)
     , mConfigManager(new ConfigManager(this))
-    , mStatsPanel(nullptr)
     , mRunning(false)
     , mStartTime(0)
+    , mSelectedCamera(0)
+    , mGridMode(2) // 2x4 default
 {
     setupUI();
 
-    // Status update timer
     mStatusTimer = new QTimer(this);
-    connect(mStatusTimer, &QTimer::timeout, this, &MainWindow::updateStatusBar);
-    mStatusTimer->start(2000);  // every 2 seconds
+    connect(mStatusTimer, &QTimer::timeout, this, &MainWindow::updatePanels);
+    mStatusTimer->start(2000);
 
-    // Register metatypes
     qRegisterMetaType<FrameData>("FrameData");
     qRegisterMetaType<InferenceResult>("InferenceResult");
     qRegisterMetaType<DisplayResult>("DisplayResult");
@@ -69,94 +55,100 @@ MainWindow::~MainWindow()
 
 void MainWindow::setupUI()
 {
-    // Window properties — optimized for large screen display
     setWindowTitle("Screen Inference System");
     resize(1920, 1080);
     setMinimumSize(1280, 720);
 
-    // Dark theme
-    setStyleSheet(
-        "QMainWindow { background-color: #1a1a2e; }"
-        "QMenuBar { background-color: #16213e; color: #e0e0e0; font-size: 13px; }"
-        "QMenuBar::item:selected { background-color: #0f3460; }"
-        "QMenu { background-color: #16213e; color: #e0e0e0; border: 1px solid #0f3460; }"
-        "QMenu::item:selected { background-color: #0f3460; }"
-        "QStatusBar { background-color: #16213e; color: #e0e0e0; font-size: 12px; }"
-        "QGroupBox { color: #e0e0e0; border: 1px solid #333; border-radius: 4px; margin-top: 8px; "
-        "            font-size: 12px; font-weight: bold; }"
-        "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; }"
-        "QPushButton { background-color: #0f3460; color: white; border: none; "
-        "              padding: 6px 16px; border-radius: 3px; font-size: 12px; }"
-        "QPushButton:hover { background-color: #1a5276; }"
-        "QPushButton:pressed { background-color: #0a2647; }"
-    );
+    // App-wide dark theme
+    setStyleSheet(QString(
+        "QMainWindow { background-color: %1; }"
+        "QToolTip { background-color: #16213e; color: #e0f0ff; border: 1px solid #0f3460; "
+        "           padding: 4px; font-size: 11px; }"
+        "QScrollBar:vertical { background: #0a0e1a; width: 6px; }"
+        "QScrollBar::handle:vertical { background: #1a3a60; border-radius: 3px; min-height: 20px; }"
+        "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
+    ).arg(Theme::background().name()));
 
-    // Central widget — paints background image behind all children
-    mCentralWidget = new BackgroundWidget(this);
+    // Central widget — plain dark background (no background image)
+    mCentralWidget = new QWidget(this);
+    mCentralWidget->setStyleSheet(QString("background-color: %1;").arg(Theme::background().name()));
     setCentralWidget(mCentralWidget);
 
-    // Root layout: video grid (left, 3 parts) | stats panel (right, 1 part)
-    mRootLayout = new QHBoxLayout(mCentralWidget);
-    mRootLayout->setContentsMargins(8, 8, 8, 8);
-    mRootLayout->setSpacing(10);
+    // Remove menu bar — actions are in sidebar and bottom bar
+    menuBar()->hide();
+    statusBar()->hide();
 
-    // --- Video grid: 2 rows x 4 columns ---
-    mGridLayout = new QGridLayout();
-    mGridLayout->setSpacing(4);
+    // Root layout: Sidebar | Center | AlertPanel
+    mRootLayout = new QHBoxLayout(mCentralWidget);
+    mRootLayout->setContentsMargins(0, 0, 0, 0);
+    mRootLayout->setSpacing(0);
+
+    // --- Left Sidebar ---
+    mSidebar = new SidebarWidget(mCentralWidget);
+    connect(mSidebar, &SidebarWidget::settingsRequested, this, &MainWindow::openSettings);
+    connect(mSidebar, &SidebarWidget::startStopToggled, this, [this]() {
+        if (mRunning) stopAll(); else startAll();
+    });
+    mRootLayout->addWidget(mSidebar);
+
+    // --- Center: Grid + Bottom Bar ---
+    mCenterContainer = new QWidget(mCentralWidget);
+    mCenterContainer->setStyleSheet("background: transparent;");
+    mCenterLayout = new QVBoxLayout(mCenterContainer);
+    mCenterLayout->setContentsMargins(Theme::LayoutMargin, Theme::LayoutMargin,
+                                       Theme::LayoutMargin, 0);
+    mCenterLayout->setSpacing(Theme::LayoutMargin);
+
+    // Video grid
+    mGridContainer = new QWidget(mCenterContainer);
+    mGridContainer->setStyleSheet("background: transparent;");
+    mGridLayout = new QGridLayout(mGridContainer);
+    mGridLayout->setSpacing(Theme::GridSpacing);
     mGridLayout->setContentsMargins(0, 0, 0, 0);
 
     static const char* CAM_NAMES[8] = {
-        "产线1 前", "产线1 后", "产线1 左", "产线1 右",
-        "产线2 前", "产线2 后", "产线2 左", "产线2 右"
+        "\xe4\xba\xa7\xe7\xba\xbf\x31 \xe5\x89\x8d",
+        "\xe4\xba\xa7\xe7\xba\xbf\x31 \xe5\x90\x8e",
+        "\xe4\xba\xa7\xe7\xba\xbf\x31 \xe5\xb7\xa6",
+        "\xe4\xba\xa7\xe7\xba\xbf\x31 \xe5\x8f\xb3",
+        "\xe4\xba\xa7\xe7\xba\xbf\x32 \xe5\x89\x8d",
+        "\xe4\xba\xa7\xe7\xba\xbf\x32 \xe5\x90\x8e",
+        "\xe4\xba\xa7\xe7\xba\xbf\x32 \xe5\xb7\xa6",
+        "\xe4\xba\xa7\xe7\xba\xbf\x32 \xe5\x8f\xb3"
     };
 
     for (int i = 0; i < 8; ++i) {
-        int row = i / 4;
-        int col = i % 4;
         QString title = QString::fromUtf8(CAM_NAMES[i]);
-
-        auto* videoWidget = new VideoWidget(i, title, mCentralWidget);
+        auto* videoWidget = new VideoWidget(i, title, mGridContainer);
         mVideoWidgets.append(videoWidget);
 
         connect(videoWidget, &VideoWidget::confidenceThresholdChanged,
                 this, &MainWindow::onConfidenceThresholdChanged);
-        connect(videoWidget, &VideoWidget::clicked, this, [this](int camId) {
-            qDebug() << "Camera" << camId << "clicked";
-        });
-
-        mGridLayout->addWidget(videoWidget, row, col);
-        mGridLayout->setColumnStretch(col, 1);
+        connect(videoWidget, &VideoWidget::clicked,
+                this, &MainWindow::onCameraClicked);
     }
-    // Rows are sized by heightForWidth (16:9); push leftover space to bottom
-    mGridLayout->setRowStretch(2, 1);
 
-    // Wrap grid in a container so we can set stretch ratio
-    auto* gridContainer = new QWidget(mCentralWidget);
-    gridContainer->setAttribute(Qt::WA_TranslucentBackground);
-    auto* gcLayout = new QVBoxLayout(gridContainer);
-    gcLayout->setContentsMargins(0, 0, 0, 0);
-    gcLayout->addLayout(mGridLayout);
+    // Set initial selection
+    mVideoWidgets[0]->setSelected(true);
 
-    mRootLayout->addWidget(gridContainer, 3);   // 3/4 width for cameras
+    // Apply default 2x4 grid
+    applyGridLayout(mGridMode);
 
-    // --- Right stats panel ---
-    mStatsPanel = new StatsPanel(mCentralWidget);
-    mRootLayout->addWidget(mStatsPanel, 1);     // 1/4 width for stats
+    mCenterLayout->addWidget(mGridContainer, 1);
 
-    statusBar()->hide();
+    // Bottom control bar
+    mBottomBar = new BottomControlBar(mCenterContainer);
+    mBottomBar->setGridMode(mGridMode);
+    connect(mBottomBar, &BottomControlBar::gridModeChanged, this, &MainWindow::onGridModeChanged);
+    connect(mBottomBar, &BottomControlBar::fullscreenToggled, this, &MainWindow::onToggleFullscreen);
+    connect(mBottomBar, &BottomControlBar::settingsRequested, this, &MainWindow::openSettings);
+    mCenterLayout->addWidget(mBottomBar);
 
-    // Menu bar — 文件(F)
-    QMenu* fileMenu = menuBar()->addMenu(QString::fromUtf8("文件(&F)"));
-    QAction* startAllAct = fileMenu->addAction(QString::fromUtf8("启动全部"));
-    connect(startAllAct, &QAction::triggered, this, &MainWindow::startAll);
-    QAction* stopAllAct = fileMenu->addAction(QString::fromUtf8("停止全部"));
-    connect(stopAllAct, &QAction::triggered, this, &MainWindow::stopAll);
-    fileMenu->addSeparator();
-    QAction* settingsAct = fileMenu->addAction(QString::fromUtf8("设置..."));
-    connect(settingsAct, &QAction::triggered, this, &MainWindow::openSettings);
-    fileMenu->addSeparator();
-    QAction* quitAct = fileMenu->addAction(QString::fromUtf8("退出"));
-    connect(quitAct, &QAction::triggered, this, &QMainWindow::close);
+    mRootLayout->addWidget(mCenterContainer, 1); // stretch = 1 (takes remaining space)
+
+    // --- Right Alert Panel ---
+    mAlertPanel = new AlertPanel(mCentralWidget);
+    mRootLayout->addWidget(mAlertPanel);
 }
 
 bool MainWindow::initialize(const QString& configPath)
@@ -167,20 +159,25 @@ bool MainWindow::initialize(const QString& configPath)
 
     if (!mConfigManager->loadFromFile(path)) {
         qWarning() << "MainWindow: Failed to load config, using defaults";
-        // Create default 8-camera config
         for (int i = 0; i < 8; ++i) {
             CameraConfig cfg;
             cfg.cameraId = i;
-            cfg.name     = QString::fromUtf8("摄像头 %1").arg(i + 1);
-            cfg.source   = QString::number(i);  // /dev/videoN or camera index
+            cfg.name     = QString::fromUtf8("\xe6\x91\x84\xe5\x83\x8f\xe5\xa4\xb4 %1").arg(i + 1);
+            cfg.source   = QString::number(i);
             cfg.modelPath = QString("camera_%1.onnx").arg(i);
             mConfigManager->setCameraConfig(i, cfg);
         }
     }
 
-    // Setup pipeline for each camera
     auto configs = mConfigManager->allConfigs();
     for (const auto& cfg : configs) {
+        // Update video widget titles from config
+        if (cfg.cameraId < mVideoWidgets.size()) {
+            mVideoWidgets[cfg.cameraId]->setTitle(cfg.name);
+        }
+        // Update alert panel device names
+        mAlertPanel->updateDeviceStatus(cfg.cameraId, cfg.name, false, 0.0, 0);
+
         if (cfg.enabled) {
             setupCameraPipeline(cfg.cameraId, cfg);
         }
@@ -192,7 +189,6 @@ bool MainWindow::initialize(const QString& configPath)
 
 bool MainWindow::setupCameraPipeline(int cameraId, const CameraConfig& config)
 {
-    // --- Create smoothing filter (main thread) ---
     auto* smoother = new SmoothingFilter(cameraId, this);
     smoother->setAlpha(config.smoothingAlpha);
     smoother->setMaxLostFrames(config.trackMaxLost);
@@ -202,7 +198,6 @@ bool MainWindow::setupCameraPipeline(int cameraId, const CameraConfig& config)
 
     mSmoothingFilters[cameraId] = smoother;
 
-    // --- Create inference engine (own thread) ---
     auto* inference = new InferenceEngine(cameraId, this);
 
     bool modelLoaded = false;
@@ -221,7 +216,6 @@ bool MainWindow::setupCameraPipeline(int cameraId, const CameraConfig& config)
 
     mInferenceEngines[cameraId] = inference;
 
-    // --- Create camera capture (own thread) ---
     auto* camera = new CameraThread(cameraId, this);
     camera->setInferenceInterval(config.inferenceIntervalMs);
 
@@ -236,10 +230,8 @@ bool MainWindow::setupCameraPipeline(int cameraId, const CameraConfig& config)
 
     mCameraThreads[cameraId] = camera;
 
-    // Open camera source
     bool opened = camera->open(config.source);
 
-    // Update video widget title
     if (cameraId < mVideoWidgets.size()) {
         mVideoWidgets[cameraId]->setConfidenceThreshold(config.confidenceThreshold);
     }
@@ -254,18 +246,16 @@ bool MainWindow::setupCameraPipeline(int cameraId, const CameraConfig& config)
 
 void MainWindow::teardownCameraPipeline(int cameraId)
 {
-    // Remove in reverse order
-
     if (mCameraThreads.contains(cameraId)) {
         auto* camera = mCameraThreads[cameraId];
         mCameraThreads.remove(cameraId);
-        delete camera;  // stops capture + thread
+        delete camera;
     }
 
     if (mInferenceEngines.contains(cameraId)) {
         auto* inference = mInferenceEngines[cameraId];
         mInferenceEngines.remove(cameraId);
-        delete inference;  // stops inference thread
+        delete inference;
     }
 
     if (mSmoothingFilters.contains(cameraId)) {
@@ -285,18 +275,16 @@ void MainWindow::startAll()
 
     mRunning = true;
     mStartTime = QDateTime::currentMSecsSinceEpoch();
+    mSidebar->setRunning(true);
 
-    // Start capture threads for all cameras
     for (auto it = mCameraThreads.begin(); it != mCameraThreads.end(); ++it) {
-        // Capture thread starts automatically via thread->start() in constructor
-        // If it was stopped, we need to recreate
         int camId = it.key();
         if (camId < mVideoWidgets.size()) {
             mVideoWidgets[camId]->showNoSignal();
         }
     }
 
-    updateStatusBar();
+    updatePanels();
     qDebug() << "MainWindow: All systems started";
 }
 
@@ -305,23 +293,21 @@ void MainWindow::stopAll()
     if (!mRunning) return;
 
     mRunning = false;
+    mSidebar->setRunning(false);
 
-    // Stop all captures
     for (auto* camera : mCameraThreads) {
         camera->close();
     }
 
-    // Reset all video widgets
     for (auto* widget : mVideoWidgets) {
         widget->showNoSignal();
     }
 
-    // Reset all smoothers
     for (auto* smoother : mSmoothingFilters) {
         smoother->reset();
     }
 
-    updateStatusBar();
+    updatePanels();
     qDebug() << "MainWindow: All systems stopped";
 }
 
@@ -340,14 +326,113 @@ void MainWindow::openSettings()
             if (cfg.enabled)
                 setupCameraPipeline(cfg.cameraId, cfg);
 
-            // Update VideoWidget title regardless of enabled state
             if (cfg.cameraId < mVideoWidgets.size())
                 mVideoWidgets[cfg.cameraId]->setTitle(cfg.name);
+
+            mAlertPanel->updateDeviceStatus(cfg.cameraId, cfg.name, false, 0.0, 0);
         }
 
         if (wasRunning) startAll();
     });
     dlg.exec();
+}
+
+void MainWindow::onCameraClicked(int cameraId)
+{
+    if (cameraId == mSelectedCamera) return;
+
+    // Deselect previous
+    if (mSelectedCamera >= 0 && mSelectedCamera < mVideoWidgets.size())
+        mVideoWidgets[mSelectedCamera]->setSelected(false);
+
+    // Select new
+    mSelectedCamera = cameraId;
+    if (cameraId >= 0 && cameraId < mVideoWidgets.size())
+        mVideoWidgets[cameraId]->setSelected(true);
+
+    // If in 1x1 mode, switch to this camera
+    if (mGridMode == 0)
+        applyGridLayout(0);
+}
+
+void MainWindow::onGridModeChanged(int mode)
+{
+    mGridMode = mode;
+    applyGridLayout(mode);
+}
+
+void MainWindow::applyGridLayout(int mode)
+{
+    // Remove all widgets from grid (without deleting them)
+    while (mGridLayout->count() > 0) {
+        QLayoutItem* item = mGridLayout->takeAt(0);
+        if (item->widget())
+            item->widget()->hide();
+        delete item;
+    }
+
+    // Clear stretch settings
+    for (int i = 0; i < 8; ++i) {
+        mGridLayout->setRowStretch(i, 0);
+        mGridLayout->setColumnStretch(i, 0);
+    }
+
+    switch (mode) {
+    case 0: { // 1x1 — selected camera only
+        int cam = mSelectedCamera;
+        if (cam < 0 || cam >= mVideoWidgets.size()) cam = 0;
+        mVideoWidgets[cam]->show();
+        mGridLayout->addWidget(mVideoWidgets[cam], 0, 0);
+        mGridLayout->setRowStretch(0, 1);
+        mGridLayout->setColumnStretch(0, 1);
+        break;
+    }
+    case 1: { // 2x2 — 4 cameras starting from selected block
+        int start = (mSelectedCamera / 4) * 4;
+        for (int i = 0; i < 4; ++i) {
+            int camIdx = start + i;
+            if (camIdx < mVideoWidgets.size()) {
+                mVideoWidgets[camIdx]->show();
+                mGridLayout->addWidget(mVideoWidgets[camIdx], i / 2, i % 2);
+            }
+        }
+        mGridLayout->setRowStretch(0, 1);
+        mGridLayout->setRowStretch(1, 1);
+        mGridLayout->setColumnStretch(0, 1);
+        mGridLayout->setColumnStretch(1, 1);
+        break;
+    }
+    case 2: { // 2x4 — all 8 cameras (default)
+        for (int i = 0; i < 8; ++i) {
+            mVideoWidgets[i]->show();
+            mGridLayout->addWidget(mVideoWidgets[i], i / 4, i % 4);
+        }
+        for (int c = 0; c < 4; ++c)
+            mGridLayout->setColumnStretch(c, 1);
+        mGridLayout->setRowStretch(0, 1);
+        mGridLayout->setRowStretch(1, 1);
+        break;
+    }
+    case 3: { // 3x3 — all 8 cameras + 1 empty
+        for (int i = 0; i < 8; ++i) {
+            mVideoWidgets[i]->show();
+            mGridLayout->addWidget(mVideoWidgets[i], i / 3, i % 3);
+        }
+        for (int c = 0; c < 3; ++c)
+            mGridLayout->setColumnStretch(c, 1);
+        for (int r = 0; r < 3; ++r)
+            mGridLayout->setRowStretch(r, 1);
+        break;
+    }
+    }
+}
+
+void MainWindow::onToggleFullscreen()
+{
+    if (isFullScreen())
+        showNormal();
+    else
+        showFullScreen();
 }
 
 // ================================================================
@@ -361,9 +446,6 @@ void MainWindow::onConfidenceThresholdChanged(int cameraId, float threshold)
     if (mInferenceEngines.contains(cameraId)) {
         mInferenceEngines[cameraId]->setConfidenceThreshold(threshold);
     }
-
-    qDebug() << "MainWindow: Camera" << cameraId
-             << "confidence threshold =" << threshold;
 }
 
 void MainWindow::onDisplayFrameReady(const FrameData& frame)
@@ -378,7 +460,6 @@ void MainWindow::onInferenceFrameReady(const FrameData& frame)
 {
     int camId = frame.cameraId;
     if (mInferenceEngines.contains(camId)) {
-        // Queue inference via signal to worker thread
         emit mInferenceEngines[camId]->requestInference(frame);
     }
 }
@@ -387,14 +468,24 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
 {
     int camId = result.cameraId;
 
-    // Forward to smoothing filter
     if (mSmoothingFilters.contains(camId)) {
         mSmoothingFilters[camId]->processInferenceResult(result);
     }
 
-    // Update inference time display
     if (camId < mVideoWidgets.size()) {
         mVideoWidgets[camId]->updateInferenceTime(result.inferenceTimeMs);
+    }
+
+    // Feed alerts for high-confidence detections
+    for (const auto& det : result.detections) {
+        if (det.confidence >= 0.6f && camId < mVideoWidgets.size()) {
+            auto configs = mConfigManager->allConfigs();
+            QString camName;
+            for (const auto& cfg : configs) {
+                if (cfg.cameraId == camId) { camName = cfg.name; break; }
+            }
+            mAlertPanel->addAlert(camId, camName, det.classId, det.confidence);
+        }
     }
 }
 
@@ -416,38 +507,28 @@ void MainWindow::onFpsUpdated(int cameraId, double fps)
 void MainWindow::onCameraError(const QString& message)
 {
     qWarning() << "MainWindow: Camera error:" << message;
-    statusBar()->showMessage(message, 5000);
 }
 
-void MainWindow::updateStatusBar()
+void MainWindow::updatePanels()
 {
-    qint64 elapsed = mRunning ? (QDateTime::currentMSecsSinceEpoch() - mStartTime) : 0;
-
     if (!mRunning) {
-        mStatsPanel->setRunning(false);
-        mStatsPanel->updateStats(0, 0.0, 0, 0, {}, {});
+        for (int i = 0; i < mVideoWidgets.size(); ++i) {
+            auto configs = mConfigManager->allConfigs();
+            QString name = (i < configs.size()) ? configs[i].name : QString("Camera %1").arg(i + 1);
+            mAlertPanel->updateDeviceStatus(i, name, false, 0.0, 0);
+        }
         return;
     }
 
-    QVector<int>    perCamDets(mVideoWidgets.size(), 0);
-    QVector<double> perCamFps(mVideoWidgets.size(), 0.0);
-    int totalDets = 0;
-    double totalFps = 0.0;
-    int activeCams = 0;
-
+    auto configs = mConfigManager->allConfigs();
     for (int i = 0; i < mVideoWidgets.size(); ++i) {
         auto* w = mVideoWidgets[i];
-        int d = w->detectionCount();
-        double f = w->currentFps();
-        perCamDets[i] = d;
-        perCamFps[i]  = f;
-        totalDets += d;
-        if (f > 0.0) { totalFps += f; ++activeCams; }
+        double fps = w->currentFps();
+        int dets = w->detectionCount();
+        bool online = w->hasSignal() || mCameraThreads.contains(i);
+        QString name = (i < configs.size()) ? configs[i].name : QString("Camera %1").arg(i + 1);
+        mAlertPanel->updateDeviceStatus(i, name, online, fps, dets);
     }
-    double avgFps = activeCams > 0 ? totalFps / activeCams : 0.0;
-
-    mStatsPanel->setRunning(true);
-    mStatsPanel->updateStats(totalDets, avgFps, activeCams, elapsed, perCamDets, perCamFps);
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)
@@ -467,13 +548,9 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
     case Qt::Key_F11:
     case Qt::Key_F:
         if (event->modifiers() & Qt::ControlModifier) {
-            // Reserved for future: fullscreen single camera
+            // Reserved
         } else {
-            if (isFullScreen()) {
-                showNormal();
-            } else {
-                showFullScreen();
-            }
+            onToggleFullscreen();
         }
         break;
     case Qt::Key_Space:
@@ -482,6 +559,22 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
         } else {
             startAll();
         }
+        break;
+    case Qt::Key_1:
+        onGridModeChanged(0);
+        mBottomBar->setGridMode(0);
+        break;
+    case Qt::Key_2:
+        onGridModeChanged(1);
+        mBottomBar->setGridMode(1);
+        break;
+    case Qt::Key_3:
+        onGridModeChanged(2);
+        mBottomBar->setGridMode(2);
+        break;
+    case Qt::Key_4:
+        onGridModeChanged(3);
+        mBottomBar->setGridMode(3);
         break;
     default:
         break;

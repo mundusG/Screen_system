@@ -3,6 +3,7 @@
 
 #include <QWidget>
 #include <QMutex>
+#include <QTimer>
 #include <opencv2/imgproc.hpp>
 #include "Types.h"
 
@@ -19,6 +20,10 @@ public:
     float  confidenceThreshold() const { return mConfThreshold; }
     int    detectionCount() const { return mDetectionCount; }
     double currentFps()     const { return mCurrentFps; }
+    bool   isSelected()     const { return mSelected; }
+    bool   hasSignal()      const { return mHasSignal; }
+
+    void setSelected(bool selected);
 
 signals:
     void confidenceThresholdChanged(int cameraId, float threshold);
@@ -41,10 +46,16 @@ protected:
 
 private:
     QImage matToQImage(const cv::Mat& mat);
+    void drawLiveIndicator(QPainter& p, const QRect& videoRect);
+    void drawTimestamp(QPainter& p, const QRect& videoRect);
+    void drawStatusOverlay(QPainter& p, const QRect& videoRect);
+    void drawTitleBadge(QPainter& p);
+    void drawBorder(QPainter& p, const QRect& videoRect);
 
     int     mCameraId;
     QString mTitle;
     float   mConfThreshold = 0.5f;
+    bool    mSelected = false;
 
     cv::Mat            mCurrentFrame;
     QImage             mDisplayImage;
@@ -63,6 +74,10 @@ private:
     bool    mHasSignal              = false;
     bool    mHasDetections          = false;
     int     mDetectionCount         = 0;
+
+    QTimer* mTickTimer = nullptr;
+    float   mLivePulse = 1.0f;
+    bool    mLivePulseDir = false;
 };
 
 #endif // VIDEOWIDGET_H

@@ -28,9 +28,11 @@ void SettingsDialog::buildUI()
 
     auto* tabs = new QTabWidget(this);
     tabs->setStyleSheet(
-        "QTabWidget::pane { border: 1px solid #333; background: #1a1a2e; }"
-        "QTabBar::tab { background: #16213e; color: #ccc; padding: 6px 14px; min-width: 80px; }"
-        "QTabBar::tab:selected { background: #0f3460; color: white; }"
+        "QTabWidget::pane { border: 1px solid #1a3a60; background: #0a0e1a; }"
+        "QTabBar::tab { background: #0c1428; color: #a0c8ff; padding: 8px 16px; min-width: 80px; "
+        "    border: 1px solid #1a3a60; border-bottom: none; border-top-left-radius: 4px; border-top-right-radius: 4px; }"
+        "QTabBar::tab:selected { background: #0f3460; color: #e0f0ff; }"
+        "QTabBar::tab:hover { background: #142a50; }"
     );
 
     auto configs = mConfigManager->allConfigs();
@@ -47,21 +49,24 @@ void SettingsDialog::buildUI()
     auto* btnBox = new QDialogButtonBox(this);
     auto* saveBtn   = btnBox->addButton(QString::fromUtf8("保存"), QDialogButtonBox::AcceptRole);
     auto* cancelBtn = btnBox->addButton(QString::fromUtf8("取消"), QDialogButtonBox::RejectRole);
-    saveBtn->setStyleSheet("QPushButton { background-color: #27ae60; color: white; padding: 6px 20px; border-radius: 3px; }");
-    cancelBtn->setStyleSheet("QPushButton { background-color: #555; color: white; padding: 6px 20px; border-radius: 3px; }");
+    saveBtn->setStyleSheet("QPushButton { background-color: #00a854; color: white; padding: 8px 24px; border-radius: 4px; font-weight: bold; }"
+                           "QPushButton:hover { background-color: #00c964; }");
+    cancelBtn->setStyleSheet("QPushButton { background-color: #1a3a60; color: #a0c8ff; padding: 8px 24px; border-radius: 4px; }"
+                             "QPushButton:hover { background-color: #234a70; }");
 
     connect(saveBtn,   &QPushButton::clicked, this, &SettingsDialog::onSave);
     connect(cancelBtn, &QPushButton::clicked, this, &QDialog::reject);
 
     mainLayout->addWidget(btnBox);
 
-    setStyleSheet("QDialog { background-color: #1a1a2e; color: #e0e0e0; }"
-                  "QLabel { color: #e0e0e0; }"
-                  "QLineEdit, QDoubleSpinBox, QSpinBox { background: #16213e; color: #e0e0e0; "
-                  "    border: 1px solid #444; padding: 3px; border-radius: 2px; }"
-                  "QCheckBox { color: #e0e0e0; }"
-                  "QGroupBox { color: #e0e0e0; border: 1px solid #333; border-radius: 4px; margin-top: 8px; }"
-                  "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }");
+    setStyleSheet("QDialog { background-color: #0a0e1a; color: #e0f0ff; }"
+                  "QLabel { color: #e0f0ff; }"
+                  "QLineEdit, QDoubleSpinBox, QSpinBox { background: #0c1428; color: #e0f0ff; "
+                  "    border: 1px solid #1a3a60; padding: 4px; border-radius: 3px; }"
+                  "QLineEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus { border: 1px solid #00d4ff; }"
+                  "QCheckBox { color: #e0f0ff; }"
+                  "QGroupBox { color: #e0f0ff; border: 1px solid #1a3a60; border-radius: 6px; margin-top: 10px; }"
+                  "QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; }");
 }
 
 QWidget* SettingsDialog::buildCameraTab(int index, const CameraConfig& cfg)
