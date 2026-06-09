@@ -31,9 +31,11 @@ public:
     void updateDeviceStatus(int cameraId, const QString& name, bool online, double fps, int dets);
     void addAlert(int cameraId, const QString& cameraName, int classId, float confidence);
     void clearAlerts();
+    void setCameraRunning(int cameraId, bool running);
 
 signals:
     void alertClicked(int cameraId);
+    void cameraToggleRequested(int cameraId);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -42,8 +44,11 @@ protected:
 private:
     void drawDeviceList(QPainter& p, const QRect& area);
     void drawAlertList(QPainter& p, const QRect& area);
+    void drawPowerIcon(QPainter& p, const QRect& r, bool running);
+    QRect toggleHitRect(int row) const;
 
     QVector<DeviceStatus> mDevices;
+    QVector<bool> mCameraRunning;
     std::deque<AlertEntry> mAlerts;
     static constexpr int MaxAlerts = 20;
     int mScrollOffset = 0;

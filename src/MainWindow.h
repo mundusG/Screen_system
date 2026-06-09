@@ -35,10 +35,12 @@ public slots:
     void startAll();
     void stopAll();
     void openSettings();
+    void toggleCamera(int cameraId);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
 
 private slots:
     void onConfidenceThresholdChanged(int cameraId, float threshold);
@@ -58,6 +60,7 @@ private:
     void teardownCameraPipeline(int cameraId);
     void updatePanels();
     void applyGridLayout(int mode);
+    void constrainVideoAspectRatios();
 
     // UI - main structure
     QWidget*            mCentralWidget;
@@ -85,6 +88,7 @@ private:
 
     int     mSelectedCamera;
     int     mGridMode;
+    QMap<int, bool> mCameraRunning;
 };
 
 #endif // MAINWINDOW_H

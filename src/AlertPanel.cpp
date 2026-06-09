@@ -1,6 +1,7 @@
 #include "AlertPanel.h"
 #include "Theme.h"
 #include <QPainter>
+#include <QPainterPath>
 #include <QMouseEvent>
 
 AlertPanel::AlertPanel(QWidget* parent)
@@ -10,6 +11,7 @@ AlertPanel::AlertPanel(QWidget* parent)
     setAttribute(Qt::WA_TranslucentBackground);
 
     mDevices.resize(8);
+    mCameraRunning.fill(false, 8);
     for (int i = 0; i < 8; ++i) {
         mDevices[i].name = QString::fromUtf8("Camera %1").arg(i + 1);
         mDevices[i].online = false;
@@ -45,6 +47,13 @@ void AlertPanel::addAlert(int cameraId, const QString& cameraName, int classId, 
 void AlertPanel::clearAlerts()
 {
     mAlerts.clear();
+    update();
+}
+
+void AlertPanel::setCameraRunning(int cameraId, bool running)
+{
+    if (cameraId < 0 || cameraId >= mCameraRunning.size()) return;
+    mCameraRunning[cameraId] = running;
     update();
 }
 
@@ -132,7 +141,7 @@ void AlertPanel::drawDeviceList(QPainter& p, const QRect& area)
         // Name
         p.setFont(rowFont);
         p.setPen(dev.online ? Theme::textPrimary() : Theme::textMuted());
-        p.drawText(x + 24, rowY, area.width() - 80, 28, Qt::AlignVCenter, dev.name);
+        p.drawText(x + 24, rowY, area.width() - 104, 28, Qt::AlignVCenter, dev.name);
 
         // Status text
         QFont smallFont;
@@ -141,11 +150,16 @@ void AlertPanel::drawDeviceList(QPainter& p, const QRect& area)
         if (dev.online) {
             QString info = QString("%1 FPS").arg(dev.fps, 0, 'f', 0);
             p.setPen(Theme::textMuted());
-            p.drawText(x + area.width() - 56, rowY, 52, 28, Qt::AlignVCenter | Qt::AlignRight, info);
+            p.drawText(x + area.width() - 80, rowY, 46, 28, Qt::AlignVCenter | Qt::AlignRight, info);
         } else {
             p.setPen(Theme::offlineGray());
-            p.drawText(x + area.width() - 56, rowY, 52, 28, Qt::AlignVCenter | Qt::AlignRight, "Offline");
+            p.drawText(x + area.width() - 80, rowY, 46, 28, Qt::AlignVCenter | Qt::AlignRight, "Offline");
         }
+
+        // Power toggle button
+        QRect toggleRect = toggleHitRect(i);
+        bool running = mCameraRunning.value(i, false);
+        drawPowerIcon(p, toggleRect, running);
     }
 }
 
@@ -244,6 +258,14 @@ void AlertPanel::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() != Qt::LeftButton) return;
 
+    // Check toggle buttons in device list
+    for (int i = 0; i < mDevices.size(); ++i) {
+        if (toggleHitRect(i).contains(event->pos())) {
+            emit cameraToggleRequested(i);
+            return;
+        }
+    }
+
     // Check if click is on an alert entry
     int margin = 12;
     int deviceSectionH = 44 + mDevices.size() * 32 + 16;
@@ -257,4 +279,27 @@ void AlertPanel::mousePressEvent(QMouseEvent* event)
             emit alertClicked(mAlerts[idx].cameraId);
         }
     }
+}
+
+QRect AlertPanel::toggleHitRect(int row) const
+{
+    int margin = 12;
+    int y = 8 + 32 + row * 32;
+    return QRect(margin + width() - margin * 2 - 24, y + 4, 20, 20);
+}
+
+void AlertPanel::drawPowerIcon(QPainter& p, const QRect& r, bool running)
+{
+    QColor color = running ? Theme::onlineGreen() : Theme::offlineGray();
+    int cx = r.center().x();
+    int cy = r.center().y();
+    int radius = 7;
+
+    // Circle arc (open at top)
+    p.setPen(QPen(color, 1.5));
+    p.setBrush(Qt::NoBrush);
+    p.drawArc(cx - radius, cy - radius, radius * 2, radius * 2, 50 * 16, 260 * 16);
+
+    // Vertical line at top
+    p.drawLine(cx, cy - radius, cx, cy - 2);
 }

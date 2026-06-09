@@ -1,8 +1,8 @@
 #include "SidebarWidget.h"
 #include "Theme.h"
 #include <QPainter>
+#include <QPainterPath>
 #include <QMouseEvent>
-#include <QToolTip>
 #include <cmath>
 
 SidebarWidget::SidebarWidget(QWidget* parent)
@@ -13,9 +13,7 @@ SidebarWidget::SidebarWidget(QWidget* parent)
     setCursor(Qt::PointingHandCursor);
 
     mItems = {
-        {QString::fromUtf8("Dashboard"), 0, false, false},
         {QString::fromUtf8("Live View"), 1, true,  true},
-        {QString::fromUtf8("Playback"),  2, false, false},
         {QString::fromUtf8("Settings"),  3, false, true},
     };
 }
@@ -185,10 +183,11 @@ void SidebarWidget::mousePressEvent(QMouseEvent* event)
     int idx = hitTest(event->pos());
     if (idx == -2) {
         emit startStopToggled();
-    } else if (idx == 3) {
-        emit settingsRequested();
+    } else if (idx >= 0 && idx < mItems.size() && mItems[idx].enabled) {
+        if (mItems[idx].iconType == 3) {
+            emit settingsRequested();
+        }
     }
-    // idx 0, 2: disabled items (Dashboard, Playback) — no action
 }
 
 void SidebarWidget::mouseMoveEvent(QMouseEvent* event)
@@ -197,10 +196,6 @@ void SidebarWidget::mouseMoveEvent(QMouseEvent* event)
     if (idx != mHoveredIndex) {
         mHoveredIndex = idx;
         update();
-
-        if (idx >= 0 && !mItems[idx].enabled) {
-            QToolTip::showText(event->globalPos(), mItems[idx].label + " - Coming soon");
-        }
     }
 }
 

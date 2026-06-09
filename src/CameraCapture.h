@@ -58,6 +58,12 @@ public slots:
     /// Trigger a single capture
     void captureOne();
 
+    /// User-initiated stop (prevents auto-reconnect)
+    void requestStop();
+
+    /// User-initiated start
+    void requestStart(const QString& source);
+
 private:
     void captureLoop();
 
@@ -74,6 +80,7 @@ private:
     int         mFpsFrameCount;
 
     mutable QMutex mMutex;
+    bool mUserStopped = false;
 };
 
 /// Thread wrapper for CameraCapture
@@ -90,6 +97,8 @@ public:
     bool isOpen() const;
     void setInferenceInterval(int ms);
     int  cameraId() const;
+    void requestStop();
+    void requestStart(const QString& source);
 
     CameraCapture* capture() const { return mCapture; }
 

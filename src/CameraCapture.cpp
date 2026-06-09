@@ -123,6 +123,22 @@ void CameraCapture::stopCapture()
     qDebug() << "CameraCapture[" << mCameraId << "]: Capture stopped";
 }
 
+void CameraCapture::requestStop()
+{
+    mUserStopped = true;
+    stopCapture();
+    close();
+    qDebug() << "CameraCapture[" << mCameraId << "]: User-requested stop";
+}
+
+void CameraCapture::requestStart(const QString& source)
+{
+    mUserStopped = false;
+    open(source);
+    startCapture();
+    qDebug() << "CameraCapture[" << mCameraId << "]: User-requested start";
+}
+
 void CameraCapture::captureOne()
 {
     if (mRunning.loadRelaxed() == 0) return;
@@ -137,6 +153,7 @@ void CameraCapture::captureOne()
     }
 
     if (frame.empty()) {
+        if (mUserStopped) return;
         // Try to reconnect
         qWarning() << "CameraCapture[" << mCameraId << "]: Empty frame, attempting reconnect...";
         emit error(QString("Camera %1: Empty frame").arg(mCameraId));
@@ -253,4 +270,15 @@ void CameraThread::setInferenceInterval(int ms)
 int CameraThread::cameraId() const
 {
     return mCapture->cameraId();
+}
+
+void CameraThread::requestStop()
+{
+    QMetaObject::invokeMethod(mCapture, "requestStop", Qt::QueuedConnection);
+}
+
+void CameraThread::requestStart(const QString& source)
+{
+    QMetaObject::invokeMethod(mCapture, "requestStart", Qt::QueuedConnection,
+                              Q_ARG(QString, source));
 }

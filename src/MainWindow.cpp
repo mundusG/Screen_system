@@ -15,8 +15,11 @@
 #include <QGridLayout>
 #include <QKeyEvent>
 #include <QCloseEvent>
+#include <QResizeEvent>
 #include <QDateTime>
 #include <QApplication>
+#include <QMenuBar>
+#include <QStatusBar>
 #include <QDebug>
 
 MainWindow::MainWindow(QWidget* parent)
@@ -148,6 +151,8 @@ void MainWindow::setupUI()
 
     // --- Right Alert Panel ---
     mAlertPanel = new AlertPanel(mCentralWidget);
+    connect(mAlertPanel, &AlertPanel::cameraToggleRequested,
+            this, &MainWindow::toggleCamera);
     mRootLayout->addWidget(mAlertPanel);
 }
 
@@ -229,6 +234,8 @@ bool MainWindow::setupCameraPipeline(int cameraId, const CameraConfig& config)
             this, &MainWindow::onCameraError);
 
     mCameraThreads[cameraId] = camera;
+    mCameraRunning[cameraId] = true;
+    mAlertPanel->setCameraRunning(cameraId, true);
 
     bool opened = camera->open(config.source);
 
@@ -246,6 +253,9 @@ bool MainWindow::setupCameraPipeline(int cameraId, const CameraConfig& config)
 
 void MainWindow::teardownCameraPipeline(int cameraId)
 {
+    mCameraRunning.remove(cameraId);
+    mAlertPanel->setCameraRunning(cameraId, false);
+
     if (mCameraThreads.contains(cameraId)) {
         auto* camera = mCameraThreads[cameraId];
         mCameraThreads.remove(cameraId);
@@ -279,6 +289,14 @@ void MainWindow::startAll()
 
     for (auto it = mCameraThreads.begin(); it != mCameraThreads.end(); ++it) {
         int camId = it.key();
+        auto configs = mConfigManager->allConfigs();
+        QString source;
+        for (const auto& cfg : configs) {
+            if (cfg.cameraId == camId) { source = cfg.source; break; }
+        }
+        it.value()->requestStart(source);
+        mCameraRunning[camId] = true;
+        mAlertPanel->setCameraRunning(camId, true);
         if (camId < mVideoWidgets.size()) {
             mVideoWidgets[camId]->showNoSignal();
         }
@@ -295,8 +313,10 @@ void MainWindow::stopAll()
     mRunning = false;
     mSidebar->setRunning(false);
 
-    for (auto* camera : mCameraThreads) {
-        camera->close();
+    for (auto it = mCameraThreads.begin(); it != mCameraThreads.end(); ++it) {
+        it.value()->requestStop();
+        mCameraRunning[it.key()] = false;
+        mAlertPanel->setCameraRunning(it.key(), false);
     }
 
     for (auto* widget : mVideoWidgets) {
@@ -309,6 +329,30 @@ void MainWindow::stopAll()
 
     updatePanels();
     qDebug() << "MainWindow: All systems stopped";
+}
+
+void MainWindow::toggleCamera(int cameraId)
+{
+    if (!mCameraThreads.contains(cameraId)) return;
+
+    bool running = mCameraRunning.value(cameraId, false);
+
+    if (running) {
+        mCameraThreads[cameraId]->requestStop();
+        mCameraRunning[cameraId] = false;
+        mAlertPanel->setCameraRunning(cameraId, false);
+        if (cameraId < mVideoWidgets.size())
+            mVideoWidgets[cameraId]->showNoSignal();
+    } else {
+        auto configs = mConfigManager->allConfigs();
+        QString source;
+        for (const auto& cfg : configs) {
+            if (cfg.cameraId == cameraId) { source = cfg.source; break; }
+        }
+        mCameraThreads[cameraId]->requestStart(source);
+        mCameraRunning[cameraId] = true;
+        mAlertPanel->setCameraRunning(cameraId, true);
+    }
 }
 
 void MainWindow::openSettings()
@@ -371,11 +415,15 @@ void MainWindow::applyGridLayout(int mode)
         delete item;
     }
 
-    // Clear stretch settings
+    // Clear stretch settings and reset max heights
     for (int i = 0; i < 8; ++i) {
         mGridLayout->setRowStretch(i, 0);
         mGridLayout->setColumnStretch(i, 0);
     }
+    for (auto* vw : mVideoWidgets)
+        vw->setMaximumHeight(QWIDGETSIZE_MAX);
+
+    int numDataRows = 1;
 
     switch (mode) {
     case 0: { // 1x1 — selected camera only
@@ -383,8 +431,8 @@ void MainWindow::applyGridLayout(int mode)
         if (cam < 0 || cam >= mVideoWidgets.size()) cam = 0;
         mVideoWidgets[cam]->show();
         mGridLayout->addWidget(mVideoWidgets[cam], 0, 0);
-        mGridLayout->setRowStretch(0, 1);
         mGridLayout->setColumnStretch(0, 1);
+        numDataRows = 1;
         break;
     }
     case 1: { // 2x2 — 4 cameras starting from selected block
@@ -396,10 +444,9 @@ void MainWindow::applyGridLayout(int mode)
                 mGridLayout->addWidget(mVideoWidgets[camIdx], i / 2, i % 2);
             }
         }
-        mGridLayout->setRowStretch(0, 1);
-        mGridLayout->setRowStretch(1, 1);
         mGridLayout->setColumnStretch(0, 1);
         mGridLayout->setColumnStretch(1, 1);
+        numDataRows = 2;
         break;
     }
     case 2: { // 2x4 — all 8 cameras (default)
@@ -409,8 +456,7 @@ void MainWindow::applyGridLayout(int mode)
         }
         for (int c = 0; c < 4; ++c)
             mGridLayout->setColumnStretch(c, 1);
-        mGridLayout->setRowStretch(0, 1);
-        mGridLayout->setRowStretch(1, 1);
+        numDataRows = 2;
         break;
     }
     case 3: { // 3x3 — all 8 cameras + 1 empty
@@ -420,11 +466,33 @@ void MainWindow::applyGridLayout(int mode)
         }
         for (int c = 0; c < 3; ++c)
             mGridLayout->setColumnStretch(c, 1);
-        for (int r = 0; r < 3; ++r)
-            mGridLayout->setRowStretch(r, 1);
+        numDataRows = 3;
         break;
     }
     }
+
+    // Data rows don't stretch — spacer row absorbs leftover vertical space
+    for (int r = 0; r < numDataRows; ++r)
+        mGridLayout->setRowStretch(r, 0);
+    mGridLayout->setRowStretch(numDataRows, 1);
+
+    QTimer::singleShot(0, this, &MainWindow::constrainVideoAspectRatios);
+}
+
+void MainWindow::constrainVideoAspectRatios()
+{
+    for (auto* vw : mVideoWidgets) {
+        if (vw->isVisible() && vw->width() > 0) {
+            int maxH = vw->width() * 9 / 16;
+            vw->setMaximumHeight(maxH);
+        }
+    }
+}
+
+void MainWindow::resizeEvent(QResizeEvent* event)
+{
+    QMainWindow::resizeEvent(event);
+    QTimer::singleShot(0, this, &MainWindow::constrainVideoAspectRatios);
 }
 
 void MainWindow::onToggleFullscreen()
@@ -511,23 +579,20 @@ void MainWindow::onCameraError(const QString& message)
 
 void MainWindow::updatePanels()
 {
-    if (!mRunning) {
-        for (int i = 0; i < mVideoWidgets.size(); ++i) {
-            auto configs = mConfigManager->allConfigs();
-            QString name = (i < configs.size()) ? configs[i].name : QString("Camera %1").arg(i + 1);
-            mAlertPanel->updateDeviceStatus(i, name, false, 0.0, 0);
-        }
-        return;
-    }
-
     auto configs = mConfigManager->allConfigs();
     for (int i = 0; i < mVideoWidgets.size(); ++i) {
-        auto* w = mVideoWidgets[i];
-        double fps = w->currentFps();
-        int dets = w->detectionCount();
-        bool online = w->hasSignal() || mCameraThreads.contains(i);
         QString name = (i < configs.size()) ? configs[i].name : QString("Camera %1").arg(i + 1);
-        mAlertPanel->updateDeviceStatus(i, name, online, fps, dets);
+        bool camRunning = mCameraRunning.value(i, false);
+
+        if (!camRunning) {
+            mAlertPanel->updateDeviceStatus(i, name, false, 0.0, 0);
+        } else {
+            auto* w = mVideoWidgets[i];
+            double fps = w->currentFps();
+            int dets = w->detectionCount();
+            bool online = w->hasSignal() || mCameraThreads.contains(i);
+            mAlertPanel->updateDeviceStatus(i, name, online, fps, dets);
+        }
     }
 }
 
