@@ -8,6 +8,7 @@
 #include "SmoothingFilter.h"
 #include "ConfigManager.h"
 #include "SettingsDialog.h"
+#include "InferenceSubscriber.h"
 #include "Theme.h"
 
 #include <QVBoxLayout>
@@ -20,7 +21,10 @@
 #include <QApplication>
 #include <QMenuBar>
 #include <QStatusBar>
+#include <QTimer>
 #include <QDebug>
+#include <QStandardPaths>
+#include <QDir>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -34,10 +38,12 @@ MainWindow::MainWindow(QWidget* parent)
     , mBottomBar(nullptr)
     , mAlertPanel(nullptr)
     , mConfigManager(new ConfigManager(this))
+    , mInferenceSubscriber(nullptr)
     , mRunning(false)
     , mStartTime(0)
     , mSelectedCamera(0)
     , mGridMode(2) // 2x4 default
+    , mSystemMode("local_inference")
 {
     setupUI();
 
@@ -58,9 +64,11 @@ MainWindow::~MainWindow()
 
 void MainWindow::setupUI()
 {
+    qDebug() << "MainWindow::setupUI() - START";
     setWindowTitle("Screen Inference System");
     resize(1920, 1080);
     setMinimumSize(1280, 720);
+    qDebug() << "MainWindow::setupUI() - Window created, size:" << size();
 
     // App-wide dark theme
     setStyleSheet(QString(
@@ -145,6 +153,7 @@ void MainWindow::setupUI()
     connect(mBottomBar, &BottomControlBar::gridModeChanged, this, &MainWindow::onGridModeChanged);
     connect(mBottomBar, &BottomControlBar::fullscreenToggled, this, &MainWindow::onToggleFullscreen);
     connect(mBottomBar, &BottomControlBar::settingsRequested, this, &MainWindow::openSettings);
+    connect(mBottomBar, &BottomControlBar::snapshotRequested, this, &MainWindow::onSnapshotRequested);
     mCenterLayout->addWidget(mBottomBar);
 
     mRootLayout->addWidget(mCenterContainer, 1); // stretch = 1 (takes remaining space)
@@ -154,6 +163,10 @@ void MainWindow::setupUI()
     connect(mAlertPanel, &AlertPanel::cameraToggleRequested,
             this, &MainWindow::toggleCamera);
     mRootLayout->addWidget(mAlertPanel);
+
+    qDebug() << "MainWindow::setupUI() - COMPLETE, showing window...";
+    show();
+    qDebug() << "MainWindow::setupUI() - Window shown, isVisible:" << isVisible();
 }
 
 bool MainWindow::initialize(const QString& configPath)
@@ -171,6 +184,41 @@ bool MainWindow::initialize(const QString& configPath)
             cfg.source   = QString::number(i);
             cfg.modelPath = QString("camera_%1.onnx").arg(i);
             mConfigManager->setCameraConfig(i, cfg);
+        }
+    }
+
+    // Determine system mode
+    mSystemMode = mConfigManager->systemMode();
+    qDebug() << "MainWindow: System mode:" << mSystemMode;
+
+    // Initialize MQTT subscriber if in subscribe mode (async connection)
+    if (mSystemMode == "mqtt_subscribe") {
+        mInferenceSubscriber = new InferenceSubscriber(this);
+        connect(mInferenceSubscriber, &InferenceSubscriber::inferenceFinished,
+                this, &MainWindow::onInferenceFinished);
+        connect(mInferenceSubscriber, &InferenceSubscriber::error,
+                this, &MainWindow::onCameraError);
+
+        // Build topic list from camera configs
+        QStringList topics;
+        auto configs = mConfigManager->allConfigs();
+        for (const auto& cfg : configs) {
+            if (cfg.enabled && !cfg.mqttTopic.isEmpty()) {
+                topics.append(cfg.mqttTopic);
+            }
+        }
+
+        // Connect to MQTT broker asynchronously using QTimer
+        if (!topics.isEmpty()) {
+            QTimer::singleShot(0, this, [this, topics]() {
+                mInferenceSubscriber->connectAndSubscribe(
+                    mConfigManager->mqttBroker(),
+                    mConfigManager->mqttClientId(),
+                    topics,
+                    mConfigManager->mqttUsername(),
+                    mConfigManager->mqttPassword()
+                );
+            });
         }
     }
 
@@ -203,52 +251,87 @@ bool MainWindow::setupCameraPipeline(int cameraId, const CameraConfig& config)
 
     mSmoothingFilters[cameraId] = smoother;
 
-    auto* inference = new InferenceEngine(cameraId, this);
+    // Determine camera mode: use camera-specific mode if set, otherwise use system mode
+    QString cameraMode = config.mode.isEmpty() ? mSystemMode : config.mode;
 
-    bool modelLoaded = false;
-    if (!config.modelPath.isEmpty()) {
-        QString resolvedPath = ConfigManager::resolveModelPath(config.modelPath);
-        modelLoaded = inference->loadModel(resolvedPath,
-                                           config.inputWidth, config.inputHeight);
+    // Only setup inference engine and camera capture for local_inference mode
+    if (cameraMode == "local_inference") {
+        auto* inference = new InferenceEngine(cameraId, this);
+
+        bool modelLoaded = false;
+        if (!config.modelPath.isEmpty()) {
+            QString resolvedPath = ConfigManager::resolveModelPath(config.modelPath);
+            modelLoaded = inference->loadModel(resolvedPath,
+                                               config.inputWidth, config.inputHeight);
+        }
+        inference->setConfidenceThreshold(config.confidenceThreshold);
+        inference->setNmsThreshold(config.nmsThreshold);
+
+        connect(inference, &InferenceEngine::inferenceFinished,
+                this, &MainWindow::onInferenceFinished);
+        connect(inference, &InferenceEngine::error,
+                this, &MainWindow::onCameraError);
+
+        mInferenceEngines[cameraId] = inference;
+
+        auto* camera = new CameraThread(cameraId, this);
+        camera->setInferenceInterval(config.inferenceIntervalMs);
+
+        connect(camera, &CameraThread::displayFrameReady,
+                this, &MainWindow::onDisplayFrameReady);
+        connect(camera, &CameraThread::inferenceFrameReady,
+                this, &MainWindow::onInferenceFrameReady);
+        connect(camera, &CameraThread::fpsUpdated,
+                this, &MainWindow::onFpsUpdated);
+        connect(camera, &CameraThread::error,
+                this, &MainWindow::onCameraError);
+
+        mCameraThreads[cameraId] = camera;
+        mCameraRunning[cameraId] = false; // Will be set to true when started
+        mAlertPanel->setCameraRunning(cameraId, false);
+
+        if (cameraId < mVideoWidgets.size()) {
+            mVideoWidgets[cameraId]->setConfidenceThreshold(config.confidenceThreshold);
+        }
+
+        qDebug() << "MainWindow: Camera" << cameraId << "pipeline setup (local_inference)."
+                 << "source:" << config.source
+                 << "model:" << (modelLoaded ? "loaded" : "not loaded")
+                 << "(camera will be opened asynchronously when started)";
+
+        return true; // Return true, actual opening happens in startAll()
     }
-    inference->setConfidenceThreshold(config.confidenceThreshold);
-    inference->setNmsThreshold(config.nmsThreshold);
+    else if (cameraMode == "mqtt_subscribe") {
+        // SmoothingFilter already created above (unconditionally)
+        // Create CameraThread for RTSP video display (no InferenceEngine needed)
+        auto* camera = new CameraThread(cameraId, this);
+        camera->setInferenceInterval(config.inferenceIntervalMs);
 
-    connect(inference, &InferenceEngine::inferenceFinished,
-            this, &MainWindow::onInferenceFinished);
-    connect(inference, &InferenceEngine::error,
-            this, &MainWindow::onCameraError);
+        connect(camera, &CameraThread::displayFrameReady,
+                this, &MainWindow::onDisplayFrameReady);
+        connect(camera, &CameraThread::inferenceFrameReady,
+                this, &MainWindow::onInferenceFrameReady);
+        connect(camera, &CameraThread::fpsUpdated,
+                this, &MainWindow::onFpsUpdated);
+        connect(camera, &CameraThread::error,
+                this, &MainWindow::onCameraError);
 
-    mInferenceEngines[cameraId] = inference;
+        mCameraThreads[cameraId] = camera;
+        mCameraRunning[cameraId] = false;
+        mAlertPanel->setCameraRunning(cameraId, false);
 
-    auto* camera = new CameraThread(cameraId, this);
-    camera->setInferenceInterval(config.inferenceIntervalMs);
+        if (cameraId < mVideoWidgets.size()) {
+            mVideoWidgets[cameraId]->setConfidenceThreshold(config.confidenceThreshold);
+        }
 
-    connect(camera, &CameraThread::displayFrameReady,
-            this, &MainWindow::onDisplayFrameReady);
-    connect(camera, &CameraThread::inferenceFrameReady,
-            this, &MainWindow::onInferenceFrameReady);
-    connect(camera, &CameraThread::fpsUpdated,
-            this, &MainWindow::onFpsUpdated);
-    connect(camera, &CameraThread::error,
-            this, &MainWindow::onCameraError);
+        qDebug() << "MainWindow: Camera" << cameraId << "in mqtt_subscribe mode"
+                 << "source:" << config.source << "(RTSP video + MQTT detections)";
 
-    mCameraThreads[cameraId] = camera;
-    mCameraRunning[cameraId] = true;
-    mAlertPanel->setCameraRunning(cameraId, true);
-
-    bool opened = camera->open(config.source);
-
-    if (cameraId < mVideoWidgets.size()) {
-        mVideoWidgets[cameraId]->setConfidenceThreshold(config.confidenceThreshold);
+        return true;
     }
 
-    qDebug() << "MainWindow: Camera" << cameraId << "pipeline setup."
-             << "source:" << config.source
-             << "model:" << (modelLoaded ? "loaded" : "not loaded")
-             << "opened:" << opened;
-
-    return opened;
+    qWarning() << "MainWindow: Unsupported camera mode:" << cameraMode;
+    return false;
 }
 
 void MainWindow::teardownCameraPipeline(int cameraId)
@@ -503,6 +586,28 @@ void MainWindow::onToggleFullscreen()
         showFullScreen();
 }
 
+void MainWindow::onSnapshotRequested()
+{
+    if (mSelectedCamera < 0 || mSelectedCamera >= mVideoWidgets.size()) return;
+    QImage frame = mVideoWidgets[mSelectedCamera]->grabFullFrame();
+    if (frame.isNull()) {
+        qWarning() << "Snapshot: No frame available for camera" << mSelectedCamera;
+        return;
+    }
+
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+    if (dir.isEmpty()) dir = QDir::homePath();
+    QDir().mkpath(dir);
+    QString path = dir + QString("/snapshot_cam%1_%2.png")
+                       .arg(mSelectedCamera)
+                       .arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
+    if (frame.save(path)) {
+        qDebug() << "Snapshot saved:" << path;
+    } else {
+        qWarning() << "Snapshot failed to save:" << path;
+    }
+}
+
 // ================================================================
 // Pipeline signal handlers
 // ================================================================
@@ -536,8 +641,13 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
 {
     int camId = result.cameraId;
 
+    qDebug() << "MainWindow::onInferenceFinished: camera" << camId
+             << "detections:" << result.detections.size();
+
     if (mSmoothingFilters.contains(camId)) {
         mSmoothingFilters[camId]->processInferenceResult(result);
+    } else {
+        qWarning() << "MainWindow::onInferenceFinished: No SmoothingFilter for camera" << camId;
     }
 
     if (camId < mVideoWidgets.size()) {
@@ -545,14 +655,20 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
     }
 
     // Feed alerts for high-confidence detections
+    QImage thumbnail;
+    bool thumbnailGrabbed = false;
     for (const auto& det : result.detections) {
         if (det.confidence >= 0.6f && camId < mVideoWidgets.size()) {
+            if (!thumbnailGrabbed) {
+                thumbnail = mVideoWidgets[camId]->grabThumbnail(100);
+                thumbnailGrabbed = true;
+            }
             auto configs = mConfigManager->allConfigs();
             QString camName;
             for (const auto& cfg : configs) {
                 if (cfg.cameraId == camId) { camName = cfg.name; break; }
             }
-            mAlertPanel->addAlert(camId, camName, det.classId, det.confidence);
+            mAlertPanel->addAlert(camId, camName, det.classId, det.confidence, thumbnail);
         }
     }
 }
@@ -560,8 +676,14 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
 void MainWindow::onDisplayResultReady(const DisplayResult& result)
 {
     int camId = result.cameraId;
+    qDebug() << "MainWindow::onDisplayResultReady: camera" << camId
+             << "detections:" << result.detections.size();
+
     if (camId >= 0 && camId < mVideoWidgets.size()) {
         mVideoWidgets[camId]->updateDetectionOverlay(result);
+        qDebug() << "MainWindow::onDisplayResultReady: Updated VideoWidget" << camId;
+    } else {
+        qWarning() << "MainWindow::onDisplayResultReady: Invalid camera ID" << camId;
     }
 }
 

@@ -53,6 +53,21 @@ public:
     /// Get class color for a given camera and class ID
     QColor classColor(int cameraId, int classId) const;
 
+    /// Get system mode
+    QString systemMode() const;
+
+    /// Get MQTT broker URL
+    QString mqttBroker() const;
+
+    /// Get MQTT client ID
+    QString mqttClientId() const;
+
+    /// Get MQTT username
+    QString mqttUsername() const;
+
+    /// Get MQTT password
+    QString mqttPassword() const;
+
     /// Resolve config file path by searching standard locations
     static QString resolveConfigPath();
 
@@ -73,6 +88,11 @@ private:
 
     mutable QMutex      mMutex;
     QVector<CameraConfig> mConfigs;
+    QString mSystemMode;
+    QString mMqttBroker;
+    QString mMqttClientId;
+    QString mMqttUsername;
+    QString mMqttPassword;
 };
 
 #endif // CONFIGMANAGER_H

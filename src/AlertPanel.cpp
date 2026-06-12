@@ -28,7 +28,7 @@ void AlertPanel::updateDeviceStatus(int cameraId, const QString& name, bool onli
     update();
 }
 
-void AlertPanel::addAlert(int cameraId, const QString& cameraName, int classId, float confidence)
+void AlertPanel::addAlert(int cameraId, const QString& cameraName, int classId, float confidence, const QImage& thumbnail)
 {
     AlertEntry entry;
     entry.cameraId = cameraId;
@@ -36,6 +36,7 @@ void AlertPanel::addAlert(int cameraId, const QString& cameraName, int classId, 
     entry.classId = classId;
     entry.confidence = confidence;
     entry.timestamp = QDateTime::currentDateTime();
+    entry.thumbnail = thumbnail;
 
     mAlerts.push_front(entry);
     if (static_cast<int>(mAlerts.size()) > MaxAlerts)
@@ -205,7 +206,7 @@ void AlertPanel::drawAlertList(QPainter& p, const QRect& area)
     }
 
     // Alert entries
-    int entryH = 48;
+    int entryH = 72;
     int maxVisible = (area.bottom() - y) / entryH;
 
     for (int i = 0; i < std::min(static_cast<int>(mAlerts.size()), maxVisible); ++i) {
@@ -224,33 +225,38 @@ void AlertPanel::drawAlertList(QPainter& p, const QRect& area)
         p.setBrush(severity);
         p.drawRect(x, ey + 4, 3, entryH - 12);
 
-        // Class dot
-        int hue = (alert.classId * 67 + 180) % 360;
-        QColor classColor = QColor::fromHsv(hue, 255, 255);
-        if (alert.classId == 0) classColor = QColor(0, 255, 0);
-        else if (alert.classId == 1) classColor = QColor(255, 0, 0);
-        p.setBrush(classColor);
-        p.drawEllipse(QPointF(x + 14, ey + 14), 3, 3);
+        // Thumbnail
+        int textX = x + 10;
+        if (!alert.thumbnail.isNull()) {
+            int thumbH = entryH - 8;
+            int thumbW = alert.thumbnail.width() * thumbH / alert.thumbnail.height();
+            QRect thumbRect(x + 8, ey + 4, thumbW, thumbH - 4);
+            p.drawImage(thumbRect, alert.thumbnail);
+            textX = x + 8 + thumbW + 6;
+        }
 
-        // Camera name + class
+        // Camera name
         QFont nameFont;
         nameFont.setPointSize(9);
         nameFont.setBold(true);
         p.setFont(nameFont);
         p.setPen(Theme::textPrimary());
-        p.drawText(x + 24, ey + 2, area.width() - 28, 20, Qt::AlignVCenter,
+        p.drawText(textX, ey + 4, area.width() - (textX - x) - 4, 20, Qt::AlignVCenter,
                    alert.cameraName);
 
-        // Confidence + time
+        // Class + confidence
         QFont detailFont;
         detailFont.setPointSize(7);
         p.setFont(detailFont);
         p.setPen(Theme::textMuted());
-        QString detail = QString("Class %1 | %2% | %3")
+        QString detail = QString("Class %1 | %2%")
             .arg(alert.classId)
-            .arg(static_cast<int>(alert.confidence * 100))
-            .arg(alert.timestamp.toString("HH:mm:ss"));
-        p.drawText(x + 24, ey + 22, area.width() - 28, 18, Qt::AlignVCenter, detail);
+            .arg(static_cast<int>(alert.confidence * 100));
+        p.drawText(textX, ey + 24, area.width() - (textX - x) - 4, 16, Qt::AlignVCenter, detail);
+
+        // Time
+        p.drawText(textX, ey + 40, area.width() - (textX - x) - 4, 16, Qt::AlignVCenter,
+                   alert.timestamp.toString("HH:mm:ss"));
     }
 }
 
@@ -270,7 +276,7 @@ void AlertPanel::mousePressEvent(QMouseEvent* event)
     int margin = 12;
     int deviceSectionH = 44 + mDevices.size() * 32 + 16;
     int alertStartY = 8 + deviceSectionH + 16 + 32;
-    int entryH = 48;
+    int entryH = 72;
 
     int clickY = event->pos().y();
     if (clickY >= alertStartY) {

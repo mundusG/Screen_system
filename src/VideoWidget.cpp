@@ -5,6 +5,9 @@
 #include <QFont>
 #include <QMouseEvent>
 #include <QDateTime>
+#include <QDebug>
+#include <QMouseEvent>
+#include <QDateTime>
 #include <algorithm>
 
 VideoWidget::VideoWidget(int cameraId, const QString& title, QWidget* parent)
@@ -26,10 +29,10 @@ VideoWidget::VideoWidget(int cameraId, const QString& title, QWidget* parent)
     connect(mTickTimer, &QTimer::timeout, this, [this]() {
         if (mLivePulseDir) {
             mLivePulse -= 0.05f;
-            if (mLivePulse <= 0.6f) mLivePulseDir = false;
+            if (mLivePulse <= 0.6f) { mLivePulse = 0.6f; mLivePulseDir = false; }
         } else {
             mLivePulse += 0.05f;
-            if (mLivePulse >= 1.0f) mLivePulseDir = true;
+            if (mLivePulse >= 1.0f) { mLivePulse = 1.0f; mLivePulseDir = true; }
         }
         update();
     });
@@ -37,6 +40,26 @@ VideoWidget::VideoWidget(int cameraId, const QString& title, QWidget* parent)
 }
 
 VideoWidget::~VideoWidget() = default;
+
+QImage VideoWidget::grabThumbnail(int maxWidth) const
+{
+    QMutexLocker locker(&mFrameMutex);
+    if (mCurrentFrame.empty()) return QImage();
+    cv::Mat rgb;
+    cv::cvtColor(mCurrentFrame, rgb, cv::COLOR_BGR2RGB);
+    QImage img(rgb.data, rgb.cols, rgb.rows, static_cast<int>(rgb.step), QImage::Format_RGB888);
+    return img.scaledToWidth(maxWidth, Qt::SmoothTransformation).copy();
+}
+
+QImage VideoWidget::grabFullFrame() const
+{
+    QMutexLocker locker(&mFrameMutex);
+    if (mCurrentFrame.empty()) return QImage();
+    cv::Mat rgb;
+    cv::cvtColor(mCurrentFrame, rgb, cv::COLOR_BGR2RGB);
+    QImage img(rgb.data, rgb.cols, rgb.rows, static_cast<int>(rgb.step), QImage::Format_RGB888);
+    return img.copy();
+}
 
 int VideoWidget::heightForWidth(int w) const { return w * 9 / 16; }
 bool VideoWidget::hasHeightForWidth() const  { return true; }
@@ -71,6 +94,14 @@ void VideoWidget::updateDetectionOverlay(const DisplayResult& result)
     {
         QMutexLocker locker(&mDetectionMutex);
         mDetections = result.detections;
+        qDebug() << "VideoWidget[" << mCameraId << "]: Updated detections, count:" << mDetections.size();
+        for (int i = 0; i < mDetections.size() && i < 3; ++i) {
+            qDebug() << "  Det" << i << ": class=" << mDetections[i].classId
+                     << "conf=" << mDetections[i].confidence
+                     << "bbox=(" << mDetections[i].bbox.x << "," << mDetections[i].bbox.y
+                     << "," << mDetections[i].bbox.width << "x" << mDetections[i].bbox.height << ")"
+                     << "filtered=" << mDetections[i].filtered;
+        }
     }
     mLastDetectionTime = QDateTime::currentMSecsSinceEpoch();
     mHasDetections = !result.detections.isEmpty();
@@ -146,92 +177,86 @@ void VideoWidget::paintEvent(QPaintEvent*)
                 painter.setOpacity(0.92);
                 painter.drawImage(ox, oy, scaled);
                 painter.setOpacity(1.0);
-
-                const float scaleX = static_cast<float>(drawW) / mCurrentFrame.cols;
-                const float scaleY = static_cast<float>(drawH) / mCurrentFrame.rows;
-
-                QMutexLocker detLocker(&mDetectionMutex);
-                for (const auto& det : mDetections) {
-                    if (det.filtered) continue;
-
-                    float bx = det.bbox.left()  * scaleX + ox;
-                    float by = det.bbox.top()   * scaleY + oy;
-                    float bw = det.bbox.width   * scaleX;
-                    float bh = det.bbox.height  * scaleY;
-
-                    QColor color;
-                    if (mClassColors.contains(det.classId)) {
-                        color = mClassColors[det.classId];
-                    } else {
-                        int hue = (det.classId * 67 + 180) % 360;
-                        color = QColor::fromHsv(hue, 255, 255);
-                        mClassColors[det.classId] = color;
-                    }
-
-                    // Detection box with corner accents
-                    painter.setPen(QPen(color, 2.0));
-                    painter.setBrush(Qt::NoBrush);
-                    painter.drawRect(QRectF(bx, by, bw, bh));
-
-                    // Corner accents (thicker short lines at corners)
-                    float cornerLen = std::min(bw, bh) * 0.15f;
-                    cornerLen = std::max(cornerLen, 6.0f);
-                    QPen cornerPen(color, 3.0);
-                    painter.setPen(cornerPen);
-                    // Top-left
-                    painter.drawLine(QPointF(bx, by), QPointF(bx + cornerLen, by));
-                    painter.drawLine(QPointF(bx, by), QPointF(bx, by + cornerLen));
-                    // Top-right
-                    painter.drawLine(QPointF(bx + bw, by), QPointF(bx + bw - cornerLen, by));
-                    painter.drawLine(QPointF(bx + bw, by), QPointF(bx + bw, by + cornerLen));
-                    // Bottom-left
-                    painter.drawLine(QPointF(bx, by + bh), QPointF(bx + cornerLen, by + bh));
-                    painter.drawLine(QPointF(bx, by + bh), QPointF(bx, by + bh - cornerLen));
-                    // Bottom-right
-                    painter.drawLine(QPointF(bx + bw, by + bh), QPointF(bx + bw - cornerLen, by + bh));
-                    painter.drawLine(QPointF(bx + bw, by + bh), QPointF(bx + bw, by + bh - cornerLen));
-
-                    // Label badge
-                    QString label = QString("%1 %2%")
-                        .arg(det.classId)
-                        .arg(det.confidence * 100, 0, 'f', 0);
-                    QFont font("Monospace", 9, QFont::Bold);
-                    painter.setFont(font);
-                    QFontMetrics fm(font);
-                    int textW = fm.horizontalAdvance(label) + 10;
-                    int textH = fm.height() + 4;
-
-                    QColor badgeBg = color;
-                    badgeBg.setAlpha(200);
-                    painter.setBrush(badgeBg);
-                    painter.setPen(Qt::NoPen);
-                    painter.drawRoundedRect(QRectF(bx, by - textH - 1, textW, textH), 2, 2);
-                    painter.setPen(Qt::white);
-                    painter.drawText(QRectF(bx + 5, by - textH - 1, textW - 5, textH),
-                                     Qt::AlignVCenter | Qt::AlignLeft, label);
-
-                    if (det.trackId >= 0) {
-                        QFont smallFont("Monospace", 7);
-                        painter.setFont(smallFont);
-                        painter.setPen(QColor(200, 220, 255, 200));
-                        painter.drawText(QPointF(bx + 4, by + bh - 4),
-                                         QString("ID:%1").arg(det.trackId));
-                    }
-                }
             }
         } else {
-            // No signal state
-            painter.setPen(Theme::textMuted());
-            QFont font = painter.font();
-            font.setPointSize(13);
-            painter.setFont(font);
-            painter.drawText(videoRect, Qt::AlignCenter, QString::fromUtf8("NO SIGNAL"));
+            // NO SIGNAL screen
+            painter.fillRect(videoRect, QColor(20, 25, 35));
 
-            // Subtle scan line effect
-            painter.setPen(QPen(QColor(30, 50, 80, 30), 1));
-            for (int y = videoRect.top(); y < videoRect.bottom(); y += 4) {
-                painter.drawLine(videoRect.left(), y, videoRect.right(), y);
+            QFont noSignalFont("Sans", 28, QFont::Bold);
+            painter.setFont(noSignalFont);
+            painter.setPen(QColor(60, 70, 90));
+            painter.drawText(videoRect, Qt::AlignCenter, "NO SIGNAL");
+
+            // Scanline effect
+            painter.setPen(QPen(QColor(40, 50, 70, 80), 1));
+            for (int y = oy; y < oy + drawH; y += 3) {
+                painter.drawLine(ox, y, ox + drawW, y);
             }
+        }
+    }
+
+    // Draw detection boxes (works for both video and NO SIGNAL)
+    {
+        QMutexLocker locker(&mFrameMutex);
+        QMutexLocker detLocker(&mDetectionMutex);
+
+        float scaleX, scaleY;
+        if (!mCurrentFrame.empty()) {
+            scaleX = static_cast<float>(drawW) / mCurrentFrame.cols;
+            scaleY = static_cast<float>(drawH) / mCurrentFrame.rows;
+        } else {
+            scaleX = static_cast<float>(drawW) / 640.0f;
+            scaleY = static_cast<float>(drawH) / 480.0f;
+        }
+
+        for (const auto& det : mDetections) {
+            if (det.filtered) continue;
+
+            float bx, by, bw, bh;
+            if (det.normalized) {
+                bx = det.bbox.left()  * drawW + ox;
+                by = det.bbox.top()   * drawH + oy;
+                bw = det.bbox.width   * drawW;
+                bh = det.bbox.height  * drawH;
+            } else {
+                bx = det.bbox.left()  * scaleX + ox;
+                by = det.bbox.top()   * scaleY + oy;
+                bw = det.bbox.width   * scaleX;
+                bh = det.bbox.height  * scaleY;
+            }
+
+            QColor color;
+            if (mClassColors.contains(det.classId)) {
+                color = mClassColors[det.classId];
+            } else {
+                int hue = (det.classId * 67 + 180) % 360;
+                color = QColor::fromHsv(hue, 255, 255);
+                mClassColors[det.classId] = color;
+            }
+
+            // Detection box
+            painter.setPen(QPen(color, 2.0));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRect(QRectF(bx, by, bw, bh));
+
+            // Label
+            QString label = QString("%1 %2%")
+                .arg(det.classId)
+                .arg(det.confidence * 100, 0, 'f', 0);
+            QFont font("Monospace", 9, QFont::Bold);
+            painter.setFont(font);
+            QFontMetrics fm(font);
+            int textW = fm.horizontalAdvance(label) + 10;
+            int textH = fm.height() + 4;
+
+            QColor badgeBg = color;
+            badgeBg.setAlpha(200);
+            painter.setBrush(badgeBg);
+            painter.setPen(Qt::NoPen);
+            painter.drawRoundedRect(QRectF(bx, by - textH - 1, textW, textH), 2, 2);
+            painter.setPen(Qt::white);
+            painter.drawText(QRectF(bx + 5, by - textH - 1, textW - 5, textH),
+                             Qt::AlignVCenter | Qt::AlignLeft, label);
         }
     }
 

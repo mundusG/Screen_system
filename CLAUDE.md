@@ -44,7 +44,6 @@ CameraCapture (独立线程)
 源码放在 Windows 下编辑，WSL 下编译运行。每次修改后执行同步脚本即可：
 
 ```bash
-# ⚠ 在 WSL 中执行（不是 Windows）
 cd ~/screen_system && ./sync.sh
 ```
 
@@ -302,10 +301,34 @@ nameserver 223.6.6.6
 generateResolvConf = false
 ```
 
+## 模型导出指南
+
+系统支持 YOLOv5 和 YOLOv8 的 **decoded 格式** ONNX 模型（输出已包含 bbox decode）。不支持 raw 特征图格式。
+
+### YOLOv5 导出
+
+```bash
+# 标准导出（输出 [1, N, 5+numClasses]，每行 cx/cy/w/h/obj_conf/cls...）
+python export.py --weights best.pt --include onnx --opset 12
+```
+
+### YOLOv8 导出
+
+```bash
+# 标准导出（输出 [1, 4+numClasses, 8400]，无 obj_conf）
+yolo export model=best.pt format=onnx opset=12
+```
+
+### 注意
+
+- 输入分辨率在配置文件中设置（`inputWidth` / `inputHeight`），须与训练/导出时一致
+- 系统会自动判断 YOLOv5 / YOLOv8 格式
+- 如果输出是 raw 特征图（多个 4D tensor），系统会打印警告并跳过推理
+
 ## 待完成
 
-- [ ] 添加 YOLO ONNX 模型文件到 `models/`
-- [ ] 测试摄像头接入（需要 USB 摄像头或 RTSP 流）
+- [x] 添加 YOLO ONNX 模型文件到 `models/`
+- [x] 测试摄像头接入（需要 USB 摄像头或 RTSP 流）
 - [ ] 实现 Dashboard 仪表盘视图
 - [ ] 实现 Playback 回放视图
 - [ ] 实现 Snapshot 截图功能

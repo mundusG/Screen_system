@@ -7,7 +7,10 @@
       "Bash(py -c \"print\\(42\\)\")",
       "Bash(python *)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Read(//mnt/d/!code/**)",
+      "Bash(cat)",
+      "Bash(python3 test_model_output.py)"
     ]
   }
 }

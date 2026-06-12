@@ -3,6 +3,7 @@
 
 #include <QWidget>
 #include <QVector>
+#include <QImage>
 #include <QDateTime>
 #include <deque>
 
@@ -12,6 +13,7 @@ struct AlertEntry {
     int classId;
     float confidence;
     QDateTime timestamp;
+    QImage thumbnail;
 };
 
 struct DeviceStatus {
@@ -29,7 +31,7 @@ public:
     explicit AlertPanel(QWidget* parent = nullptr);
 
     void updateDeviceStatus(int cameraId, const QString& name, bool online, double fps, int dets);
-    void addAlert(int cameraId, const QString& cameraName, int classId, float confidence);
+    void addAlert(int cameraId, const QString& cameraName, int classId, float confidence, const QImage& thumbnail = QImage());
     void clearAlerts();
     void setCameraRunning(int cameraId, bool running);
 

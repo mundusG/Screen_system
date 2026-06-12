@@ -2,6 +2,8 @@
 #include <QDebug>
 #include <QDateTime>
 #include <algorithm>
+#include <numeric>
+#include <cmath>
 
 // ============================================================
 // InferenceWorker implementation
@@ -87,13 +89,31 @@ void InferenceWorker::runInference(const FrameData& frame)
         return;
     }
 
+    // Debug: check input blob stats
+    {
+        static int frameCount = 0;
+        frameCount++;
+        if (frameCount <= 3) {
+            const float* blobData = blob.ptr<float>();
+            float minV = 1e9f, maxV = -1e9f;
+            for (int i = 0; i < std::min(10000, (int)blob.total()); ++i) {
+                minV = std::min(minV, blobData[i]);
+                maxV = std::max(maxV, blobData[i]);
+            }
+            qWarning() << "InferenceWorker[" << mCameraId << "]: Frame" << frameCount
+                       << "Input blob shape=[" << blob.size[0] << "," << blob.size[1] << "," << blob.size[2] << "," << blob.size[3] << "]"
+                       << "value_range=[" << minV << "," << maxV << "]";
+        }
+    }
+
     // Forward pass
-    cv::Mat output;
+    std::vector<cv::Mat> outputs;
     {
         QMutexLocker locker(&mMutex);
         try {
             mNet.setInput(blob);
-            output = mNet.forward();
+            auto outNames = mNet.getUnconnectedOutLayersNames();
+            mNet.forward(outputs, outNames);
         }
         catch (const cv::Exception& e) {
             qWarning() << "InferenceWorker[" << mCameraId << "]: Forward pass error:" << e.what();
@@ -103,7 +123,7 @@ void InferenceWorker::runInference(const FrameData& frame)
     }
 
     // Postprocess
-    QVector<Detection> detections = postprocess(output, cv::Size(frame.image.cols, frame.image.rows));
+    QVector<Detection> detections = postprocess(outputs, cv::Size(frame.image.cols, frame.image.rows));
 
     // Apply confidence threshold (mark low-confidence as filtered)
     float confThresh;
@@ -124,6 +144,8 @@ void InferenceWorker::runInference(const FrameData& frame)
     result.frameIndex      = frame.frameIndex;
     result.detections      = detections;
     result.inferenceTimeMs = static_cast<float>(t1 - t0);
+    result.frameWidth      = frame.image.cols;
+    result.frameHeight     = frame.image.rows;
 
     emit inferenceFinished(result);
 }
@@ -135,6 +157,16 @@ void InferenceWorker::reloadModel(const QString& modelPath, int inputWidth, int 
 
 cv::Mat InferenceWorker::preprocess(const cv::Mat& frame)
 {
+    // Debug input
+    static int callCount = 0;
+    callCount++;
+    if (callCount <= 3) {
+        qWarning() << "InferenceWorker[" << mCameraId << "]: Preprocess call" << callCount
+                   << "input frame size:" << frame.cols << "x" << frame.rows
+                   << "channels:" << frame.channels()
+                   << "type:" << frame.type();
+    }
+
     // Resize with letterbox to preserve aspect ratio
     cv::Mat resized, letterbox;
     float scale = std::min(
@@ -143,6 +175,10 @@ cv::Mat InferenceWorker::preprocess(const cv::Mat& frame)
 
     int newW = static_cast<int>(frame.cols * scale);
     int newH = static_cast<int>(frame.rows * scale);
+
+    if (callCount <= 3) {
+        qWarning() << "  scale=" << scale << "newW=" << newW << "newH=" << newH;
+    }
 
     cv::resize(frame, resized, cv::Size(newW, newH));
 
@@ -165,13 +201,8 @@ cv::Mat InferenceWorker::preprocess(const cv::Mat& frame)
     return blob;
 }
 
-QVector<Detection> InferenceWorker::postprocess(const cv::Mat& output, const cv::Size& originalSize)
+QVector<Detection> InferenceWorker::postprocess(const std::vector<cv::Mat>& outputs, const cv::Size& originalSize)
 {
-    // YOLOv8 ONNX output format: [1, N, 8400] where N = 4 + num_classes
-    // Transposed: each row is [x, y, w, h, class_0_conf, class_1_conf, ...]
-    //
-    // We handle the common [1, 84, 8400] shape and the transposed [1, 8400, 84] shape
-
     QVector<Detection> detections;
     float confThresh, nmsThresh;
     {
@@ -180,96 +211,225 @@ QVector<Detection> InferenceWorker::postprocess(const cv::Mat& output, const cv:
         nmsThresh  = mNmsThreshold;
     }
 
-    // Get output dimensions
-    const int dims = output.dims;
-    int rows, cols, numClasses;
-
-    if (dims == 3) {
-        // Shape: [1, N, 8400] or [1, 8400, N]
-        int dim0 = output.size[0];  // batch (1)
-        int dim1 = output.size[1];  // N or 8400
-        int dim2 = output.size[2];  // 8400 or N
-
-        if (dim1 > dim2) {
-            // [1, 8400, N] — transposed format
-            rows       = dim1;  // 8400
-            cols       = dim2;  // N
-        } else {
-            // [1, N, 8400] — standard format
-            rows       = dim2;  // 8400
-            cols       = dim1;  // N
-        }
-    } else if (dims == 2) {
-        // Shape: [8400, N]
-        rows = output.size[0];
-        cols = output.size[1];
-    } else {
-        qWarning() << "InferenceWorker[" << mCameraId
-                   << "]: Unexpected output dimensions:" << dims;
-        return detections;
-    }
-
-    numClasses = cols - 4;  // first 4 are bbox coords
-    if (numClasses < 1) {
-        qWarning() << "InferenceWorker[" << mCameraId
-                   << "]: Invalid output cols:" << cols << "(need at least 5)";
-        return detections;
-    }
-
     float scale = std::min(
         static_cast<float>(mInputWidth)  / originalSize.width,
         static_cast<float>(mInputHeight) / originalSize.height);
     int padLeft = (mInputWidth  - static_cast<int>(originalSize.width  * scale)) / 2;
     int padTop  = (mInputHeight - static_cast<int>(originalSize.height * scale)) / 2;
 
-    // Parse detections
-    const float* data = output.ptr<float>();
+    // Detect output format
+    bool isRawFeatureMap = (outputs.size() >= 3 && outputs[0].dims == 4);
 
-    for (int r = 0; r < rows; ++r) {
-        const float* row = data + r * cols;
+    if (isRawFeatureMap) {
+        static bool warned = false;
+        if (!warned) {
+            qWarning() << "InferenceWorker[" << mCameraId
+                       << "]: Raw feature map output detected. Anchor-based decode may be inaccurate."
+                       << "Please re-export model with decode included:"
+                       << "YOLOv5: python export.py --weights best.pt --include onnx"
+                       << "YOLOv8: yolo export model=best.pt format=onnx";
+            warned = true;
+        }
+        return detections;
+    }
 
-        // Find best class
-        float maxConf = 0.0f;
-        int   bestClass = 0;
-        for (int c = 4; c < cols; ++c) {
-            if (row[c] > maxConf) {
-                maxConf   = row[c];
-                bestClass = c - 4;
+    // Debug: print output shape once
+    {
+        static bool logged = false;
+        if (!logged) {
+            qWarning() << "InferenceWorker[" << mCameraId << "]: Model output:";
+            for (size_t i = 0; i < outputs.size(); ++i) {
+                QString s = QString("  output[%1] shape: [").arg(i);
+                for (int d = 0; d < outputs[i].dims; ++d) {
+                    if (d > 0) s += ", ";
+                    s += QString::number(outputs[i].size[d]);
+                }
+                s += "]";
+                qWarning().noquote() << s;
+            }
+            logged = true;
+        }
+    }
+
+    // Find the main output tensor
+    cv::Mat output;
+    for (const auto& o : outputs) {
+        if (static_cast<int>(o.total()) > static_cast<int>(output.total())) output = o;
+    }
+
+    // Debug: print original output info
+    {
+        static bool logged = false;
+        if (!logged) {
+            QString s = QString("InferenceWorker[%1]: Original output dims=%2, shape=[").arg(mCameraId).arg(output.dims);
+            for (int d = 0; d < output.dims; ++d) {
+                if (d > 0) s += ",";
+                s += QString::number(output.size[d]);
+            }
+            s += "], total=" + QString::number(output.total());
+            qWarning().noquote() << s;
+
+            // Check data range
+            const float* rawPtr = output.ptr<float>();
+            float minV = 1e9f, maxV = -1e9f;
+            int nonZero = 0;
+            for (size_t i = 0; i < std::min(static_cast<size_t>(100000), output.total()); ++i) {
+                float v = rawPtr[i];
+                minV = std::min(minV, v);
+                maxV = std::max(maxV, v);
+                if (std::abs(v) > 0.001f) nonZero++;
+            }
+            qWarning() << "  Value range (first 100k):" << minV << "to" << maxV << "nonZero=" << nonZero;
+            logged = true;
+        }
+    }
+
+    // Squeeze batch dimensions
+    cv::Mat out = output;
+    while (out.dims > 3 && out.size[0] == 1) {
+        std::vector<int> newShape;
+        for (int i = 1; i < out.dims; ++i)
+            newShape.push_back(out.size[i]);
+        out = out.reshape(1, newShape);
+    }
+
+    // Debug: print raw output stats before transpose
+    {
+        static bool logged = false;
+        if (!logged && out.dims == 3) {
+            const float* rawData = out.ptr<float>();
+            int dim1 = out.size[1], dim2 = out.size[2];
+            float minVal = 1e9f, maxVal = -1e9f;
+            int nonZeroCount = 0;
+            for (int i = 0; i < dim1 * dim2; ++i) {
+                float v = rawData[i];
+                minVal = std::min(minVal, v);
+                maxVal = std::max(maxVal, v);
+                if (std::abs(v) > 0.001f) nonZeroCount++;
+            }
+            qWarning() << "InferenceWorker[" << mCameraId << "]: Raw output before transpose:"
+                       << "shape=[" << dim1 << "," << dim2 << "]"
+                       << "value_range=[" << minVal << "," << maxVal << "]"
+                       << "non_zero=" << nonZeroCount << "/" << (dim1*dim2);
+            logged = true;
+        }
+    }
+
+    // Handle YOLOv8 output: [1, 4+numClasses, 8400]
+    // Each column is a detection: [bbox(4), class_scores(120)]
+    if (out.dims == 3 && out.size[0] == 1) {
+        int numChannels = out.size[1];  // 124
+        int numDetections = out.size[2]; // 8400
+
+        if (numChannels < 5) {
+            qWarning() << "InferenceWorker[" << mCameraId << "]: Invalid output channels:" << numChannels;
+            return detections;
+        }
+
+        int numClasses = numChannels - 4;
+
+        // Debug: verify 3D Mat data access
+        {
+            static bool logged = false;
+            if (!logged) {
+                const float* rawPtr = out.ptr<float>();
+                // NCHW layout: index = batch * (C*H*W) + channel * (H*W) + spatial_index
+                // For [1, 124, 8400]: index = 0 + channel * 8400 + col
+                qWarning() << "  Testing 3D Mat access for det 0:";
+                qWarning() << "    Via .at<float>(0,4,0):" << out.at<float>(0, 4, 0);
+                qWarning() << "    Via raw ptr [4*8400 + 0]:" << rawPtr[4 * 8400 + 0];
+                qWarning() << "    Via raw ptr [4*8400 + 1]:" << rawPtr[4 * 8400 + 1];
+                qWarning() << "    Via raw ptr [4*8400 + 100]:" << rawPtr[4 * 8400 + 100];
+                logged = true;
             }
         }
 
-        if (maxConf < confThresh) continue;
+        // Process each detection (column)
+        int passedThresh = 0;
+        float maxConfSeen = 0.0f;
+        for (int i = 0; i < numDetections; ++i) {
+            // Extract bbox and class scores from column i
+            float cx = out.at<float>(0, 0, i);
+            float cy = out.at<float>(0, 1, i);
+            float w  = out.at<float>(0, 2, i);
+            float h  = out.at<float>(0, 3, i);
 
-        // YOLOv8 output: cx, cy, w, h (normalized to model input size)
-        float cx = row[0];
-        float cy = row[1];
-        float w  = row[2];
-        float h  = row[3];
+            // Find max class score (logit)
+            float maxLogit = -1e9f;
+            int bestClass = 0;
+            for (int c = 0; c < numClasses; ++c) {
+                float logit = out.at<float>(0, 4 + c, i);
+                if (logit > maxLogit) {
+                    maxLogit = logit;
+                    bestClass = c;
+                }
+            }
 
-        // Remove padding and scale back to original size
-        float origCx = (cx - padLeft) / scale;
-        float origCy = (cy - padTop)  / scale;
-        float origW  = w / scale;
-        float origH  = h / scale;
+            // Debug: log first detection's class scores
+            static bool loggedScores = false;
+            if (!loggedScores && i == 0) {
+                QString s = "  Det 0 class scores [0:10]: [";
+                for (int c = 0; c < std::min(numClasses, 10); ++c) {
+                    if (c > 0) s += ", ";
+                    s += QString::number(out.at<float>(0, 4 + c, i), 'f', 3);
+                }
+                s += "]";
+                qWarning().noquote() << s;
+                loggedScores = true;
+            }
 
-        // Clamp to image bounds
-        origCx = std::max(0.0f, std::min(origCx, static_cast<float>(originalSize.width)));
-        origCy = std::max(0.0f, std::min(origCy, static_cast<float>(originalSize.height)));
-        origW  = std::max(1.0f, std::min(origW, static_cast<float>(originalSize.width)));
-        origH  = std::max(1.0f, std::min(origH, static_cast<float>(originalSize.height)));
+            // Apply sigmoid
+            float confidence = 1.0f / (1.0f + std::exp(-maxLogit));
 
-        Detection det;
-        det.classId    = bestClass;
-        det.confidence = maxConf;
-        det.bbox       = BoundingBox(origCx, origCy, origW, origH);
-        det.filtered   = false;
+            // Debug: log first few detections
+            static int logCount = 0;
+            if (logCount < 5) {
+                qWarning() << "  Det" << i << ": maxLogit=" << maxLogit << "confidence=" << confidence << "bestClass=" << bestClass;
+                logCount++;
+            }
 
-        detections.append(det);
+            maxConfSeen = std::max(maxConfSeen, confidence);
+
+            if (confidence < confThresh) continue;
+            passedThresh++;
+
+            // Scale back to original image
+            float origCx = (cx - padLeft) / scale;
+            float origCy = (cy - padTop) / scale;
+            float origW = w / scale;
+            float origH = h / scale;
+
+            Detection det;
+            det.classId = bestClass;
+            det.confidence = confidence;
+            det.bbox = BoundingBox(origCx, origCy, origW, origH);
+            det.filtered = false;
+            detections.append(det);
+        }
+
+        int detBeforeNMS = detections.size();
+        detections = applyNMS(detections);
+
+        // Debug log
+        {
+            static int frameCount = 0;
+            frameCount++;
+            if (frameCount % 30 == 1) {
+                qWarning() << "InferenceWorker[" << mCameraId << "]:"
+                           << "detections=" << numDetections
+                           << "classes=" << numClasses
+                           << "passed_thresh=" << passedThresh
+                           << "max_conf=" << maxConfSeen
+                           << "before_nms=" << detBeforeNMS
+                           << "after_nms=" << detections.size();
+            }
+        }
+
+        return detections;
     }
 
-    // Apply NMS
-    detections = applyNMS(detections);
-
+    // Fallback: unsupported format
+    qWarning() << "InferenceWorker[" << mCameraId << "]: Unsupported output format, dims=" << out.dims;
     return detections;
 }
 

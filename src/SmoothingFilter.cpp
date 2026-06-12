@@ -65,6 +65,7 @@ void SmoothingFilter::processInferenceResult(const InferenceResult& result)
         track.confidence         = det.confidence;
         track.framesSinceUpdate  = 0;
         track.active             = true;
+        track.normalized         = det.normalized;
     }
 
     // Create new tracks for unmatched detections
@@ -82,6 +83,7 @@ void SmoothingFilter::processInferenceResult(const InferenceResult& result)
         newTrack.confidence       = det.confidence;
         newTrack.framesSinceUpdate = 0;
         newTrack.active           = true;
+        newTrack.normalized       = det.normalized;
 
         mTracks[newTrackId] = newTrack;
     }
@@ -116,8 +118,9 @@ void SmoothingFilter::processInferenceResult(const InferenceResult& result)
         d.trackId    = track.trackId;
         d.classId    = track.classId;
         d.confidence = track.confidence;
-        d.bbox       = track.smoothedBBox;  // use smoothed position
+        d.bbox       = track.smoothedBBox;
         d.filtered   = false;
+        d.normalized = track.normalized;
         displayResult.detections.append(d);
     }
 

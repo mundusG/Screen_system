@@ -13,6 +13,9 @@ find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui)
 # Find OpenCV
 find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio dnn)
 
+# Find Paho MQTT C++
+find_package(PahoMqttCpp REQUIRED)
+
 # Source files
 set(SOURCES
     main.cpp
@@ -27,6 +30,9 @@ set(SOURCES
     src/SmoothingFilter.cpp
     src/ConfigManager.cpp
     src/SettingsDialog.cpp
+    src/MQTTClient.cpp
+    src/InferenceSubscriber.cpp
+    src/InferencePublisher.cpp
 )
 
 set(HEADERS
@@ -43,6 +49,9 @@ set(HEADERS
     src/SmoothingFilter.h
     src/ConfigManager.h
     src/SettingsDialog.h
+    src/MQTTClient.h
+    src/InferenceSubscriber.h
+    src/InferencePublisher.h
 )
 
 # Qt resources
@@ -57,6 +66,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt5::Core
     Qt5::Gui
     ${OpenCV_LIBS}
+    PahoMqttCpp::paho-mqttpp3
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -80,3 +90,68 @@ configure_file(
 install(TARGETS ${PROJECT_NAME} DESTINATION bin)
 install(DIRECTORY config/ DESTINATION share/${PROJECT_NAME}/config)
 install(DIRECTORY models/ DESTINATION share/${PROJECT_NAME}/models)
+
+# ============================================================
+# RKNN Inference Node (standalone headless app for edge devices)
+# ============================================================
+option(BUILD_RKNN_INFERENCE "Build RKNN inference standalone app (requires librknn_api)" OFF)
+
+if(BUILD_RKNN_INFERENCE)
+    # Find RKNN runtime library
+    find_library(RKNN_API_LIB rknn_api
+        HINTS /usr/lib /usr/local/lib /usr/lib/aarch64-linux-gnu
+        ENV RKNN_API_PATH
+    )
+
+    if(NOT RKNN_API_LIB)
+        message(FATAL_ERROR "RKNN API library not found. Set RKNN_API_PATH or install librknn_api.")
+    endif()
+
+    # Find rknn_api.h
+    find_path(RKNN_API_INCLUDE_DIR rknn_api.h
+        HINTS /usr/include /usr/local/include
+        ENV RKNN_API_PATH
+    )
+
+    set(RKNN_SOURCES
+        inference_main.cpp
+        src/RKNNInferenceEngine.cpp
+        src/CameraCapture.cpp
+        src/InferencePublisher.cpp
+        src/MQTTClient.cpp
+        src/ConfigManager.cpp
+    )
+
+    set(RKNN_HEADERS
+        src/RKNNInferenceEngine.h
+        src/Types.h
+        src/CameraCapture.h
+        src/InferencePublisher.h
+        src/MQTTClient.h
+        src/ConfigManager.h
+    )
+
+    add_executable(RKNNInferenceNode ${RKNN_SOURCES} ${RKNN_HEADERS})
+
+    target_link_libraries(RKNNInferenceNode PRIVATE
+        Qt5::Core
+        ${OpenCV_LIBS}
+        ${RKNN_API_LIB}
+        PahoMqttCpp::paho-mqttpp3
+    )
+
+    target_include_directories(RKNNInferenceNode PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${OpenCV_INCLUDE_DIRS}
+        ${RKNN_API_INCLUDE_DIR}
+    )
+
+    target_compile_definitions(RKNNInferenceNode PRIVATE
+        SCREEN_SYSTEM_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}"
+    )
+
+    install(TARGETS RKNNInferenceNode DESTINATION bin)
+    message(STATUS "RKNN Inference Node: ENABLED (lib: ${RKNN_API_LIB})")
+else()
+    message(STATUS "RKNN Inference Node: DISABLED (use -DBUILD_RKNN_INFERENCE=ON to enable)")
+endif()

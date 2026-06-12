@@ -55,7 +55,7 @@ private:
     cv::Mat preprocess(const cv::Mat& frame);
 
     /// Postprocess: decode YOLO output to detections
-    QVector<Detection> postprocess(const cv::Mat& output, const cv::Size& originalSize);
+    QVector<Detection> postprocess(const std::vector<cv::Mat>& outputs, const cv::Size& originalSize);
 
     /// NMS filter
     QVector<Detection> applyNMS(QVector<Detection>& detections);

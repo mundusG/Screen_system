@@ -33,17 +33,34 @@ bool ConfigManager::loadFromFile(const QString& filePath)
     }
 
     QJsonObject root = doc.object();
+
+    // Read system-level settings
+    QJsonObject systemObj = root["system"].toObject();
+    QString systemMode = systemObj["mode"].toString("local_inference");
+
+    // Read MQTT settings
+    QJsonObject mqttObj = root["mqtt"].toObject();
+    QString mqttBroker = mqttObj["broker"].toString();
+    QString mqttClientId = mqttObj["client_id"].toString();
+    QString mqttUsername = mqttObj["username"].toString();
+    QString mqttPassword = mqttObj["password"].toString();
+
     QJsonArray cameras = root["cameras"].toArray();
 
     QMutexLocker locker(&mMutex);
     mConfigs.clear();
+    mSystemMode = systemMode;
+    mMqttBroker = mqttBroker;
+    mMqttClientId = mqttClientId;
+    mMqttUsername = mqttUsername;
+    mMqttPassword = mqttPassword;
 
     for (int i = 0; i < cameras.size(); ++i) {
         QJsonObject camObj = cameras[i].toObject();
         mConfigs.append(parseCameraJson(camObj, i));
     }
 
-    qDebug() << "ConfigManager: Loaded" << mConfigs.size() << "camera configs";
+    qDebug() << "ConfigManager: Loaded" << mConfigs.size() << "camera configs, mode:" << systemMode;
     emit allConfigsChanged();
     return true;
 }
@@ -207,6 +224,36 @@ QColor ConfigManager::classColor(int cameraId, int classId) const
     return QColor("#00FF00"); // default green
 }
 
+QString ConfigManager::systemMode() const
+{
+    QMutexLocker locker(&mMutex);
+    return mSystemMode;
+}
+
+QString ConfigManager::mqttBroker() const
+{
+    QMutexLocker locker(&mMutex);
+    return mMqttBroker;
+}
+
+QString ConfigManager::mqttClientId() const
+{
+    QMutexLocker locker(&mMutex);
+    return mMqttClientId;
+}
+
+QString ConfigManager::mqttUsername() const
+{
+    QMutexLocker locker(&mMutex);
+    return mMqttUsername;
+}
+
+QString ConfigManager::mqttPassword() const
+{
+    QMutexLocker locker(&mMutex);
+    return mMqttPassword;
+}
+
 QString ConfigManager::resolveConfigPath()
 {
     // 1. Environment variable override
@@ -258,6 +305,11 @@ QString ConfigManager::resolveModelPath(const QString& modelPath)
     if (QFile::exists(devPath))
         return devPath;
 
+    // 3. Project root models: <exe>/../models/<path>
+    const QString projPath = exeDir + "/../models/" + modelPath;
+    if (QFile::exists(projPath))
+        return projPath;
+
     // 3. Installed share: <exe>/../share/ScreenInferenceSystem/models/<path>
     const QString instPath = exeDir + "/../share/ScreenInferenceSystem/models/" + modelPath;
     if (QFile::exists(instPath))
@@ -294,6 +346,8 @@ CameraConfig ConfigManager::parseCameraJson(const QJsonObject& obj, int defaultI
     cfg.modelPath            = obj["modelPath"].toString("");
     cfg.name                 = obj["name"].toString(QString("Camera %1").arg(cfg.cameraId));
     cfg.enabled              = obj["enabled"].toBool(true);
+    cfg.mode                 = obj["mode"].toString("local_inference");
+    cfg.mqttTopic            = obj["mqtt_topic"].toString("");
     cfg.confidenceThreshold  = static_cast<float>(obj["confidenceThreshold"].toDouble(0.5));
     cfg.nmsThreshold         = static_cast<float>(obj["nmsThreshold"].toDouble(0.45));
     cfg.inputWidth           = obj["inputWidth"].toInt(640);

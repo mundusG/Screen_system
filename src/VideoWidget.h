@@ -22,6 +22,8 @@ public:
     double currentFps()     const { return mCurrentFps; }
     bool   isSelected()     const { return mSelected; }
     bool   hasSignal()      const { return mHasSignal; }
+    QImage grabThumbnail(int maxWidth = 120) const;
+    QImage grabFullFrame() const;
 
     void setSelected(bool selected);
 

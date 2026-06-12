@@ -109,21 +109,16 @@ void SidebarWidget::paintEvent(QPaintEvent*)
         p.setPen(Qt::NoPen);
         p.drawRoundedRect(btnRect, 6, 6);
 
-        // Play/Stop icon
+        // Power icon
         QColor ic = Qt::white;
         int cx = btnRect.center().x();
         int cy = btnRect.center().y();
-        if (mRunning) {
-            // Stop square
-            p.setBrush(ic);
-            p.drawRect(cx - 6, cy - 6, 12, 12);
-        } else {
-            // Play triangle
-            QPolygonF tri;
-            tri << QPointF(cx - 5, cy - 7) << QPointF(cx - 5, cy + 7) << QPointF(cx + 7, cy);
-            p.setBrush(ic);
-            p.drawPolygon(tri);
-        }
+        p.setPen(QPen(ic, 2.2, Qt::SolidLine, Qt::RoundCap));
+        p.setBrush(Qt::NoBrush);
+        // Arc (open circle)
+        p.drawArc(cx - 8, cy - 8, 16, 16, 60 * 16, 240 * 16);
+        // Vertical line at top
+        p.drawLine(cx, cy - 10, cx, cy - 2);
     }
 }
 

@@ -52,9 +52,10 @@ struct Detection {
     int         trackId     = -1;      // tracking ID (assigned by tracker)
     int         classId     = 0;       // class index
     float       confidence  = 0.0f;    // confidence score [0, 1]
-    BoundingBox bbox;                  // bounding box (pixel coords on original image)
+    BoundingBox bbox;                  // bounding box
     QString     className;             // human-readable class name
     bool        filtered    = false;   // whether this detection passed confidence filter
+    bool        normalized  = false;   // true if bbox is in [0,1] normalized coords
 };
 
 /// Per-camera configuration
@@ -64,6 +65,8 @@ struct CameraConfig {
     QString modelPath;                    // path to .onnx model weights
     QString name;                         // display name
     bool    enabled         = true;
+    QString mode            = "local_inference"; // "local_inference", "mqtt_publish", "mqtt_subscribe"
+    QString mqttTopic;                    // MQTT topic for this camera (subscribe mode)
 
     // Inference settings
     float   confidenceThreshold = 0.5f;  // minimum confidence to show detection
@@ -106,6 +109,8 @@ struct InferenceResult {
     int              frameIndex = 0;
     QVector<Detection> detections;  // raw detections from model
     float            inferenceTimeMs = 0.0f;
+    int              frameWidth  = 0;  // original frame width (for coordinate normalization)
+    int              frameHeight = 0;  // original frame height
 };
 
 /// Smoothed result ready for display

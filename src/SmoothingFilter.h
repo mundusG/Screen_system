@@ -16,6 +16,7 @@ struct TrackState {
     float       confidence  = 0.0f;
     int         framesSinceUpdate = 0;  // frames since last matched detection
     bool        active      = true;
+    bool        normalized  = false;    // whether bbox coords are normalized [0,1]
 };
 
 /// Performs IoU-based tracking and EMA smoothing of bounding boxes.

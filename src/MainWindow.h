@@ -20,6 +20,7 @@ class SettingsDialog;
 class SidebarWidget;
 class BottomControlBar;
 class AlertPanel;
+class InferenceSubscriber;
 
 class MainWindow : public QMainWindow
 {
@@ -53,6 +54,7 @@ private slots:
     void onCameraClicked(int cameraId);
     void onGridModeChanged(int mode);
     void onToggleFullscreen();
+    void onSnapshotRequested();
 
 private:
     void setupUI();
@@ -81,6 +83,7 @@ private:
     QMap<int, SmoothingFilter*> mSmoothingFilters;
 
     ConfigManager* mConfigManager;
+    InferenceSubscriber* mInferenceSubscriber;
 
     bool    mRunning;
     qint64  mStartTime;
@@ -89,6 +92,7 @@ private:
     int     mSelectedCamera;
     int     mGridMode;
     QMap<int, bool> mCameraRunning;
+    QString mSystemMode; // "local_inference", "mqtt_publish", "mqtt_subscribe"
 };
 
 #endif // MAINWINDOW_H
