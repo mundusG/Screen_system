@@ -1,0 +1,2 @@
+freetype_py==2.0
+paho_mqtt==1.6.1

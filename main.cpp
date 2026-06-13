@@ -4,6 +4,7 @@
 #include <QMessageBox>
 #include <QFont>
 #include <QFontDatabase>
+#include <QTimer>
 #include "src/MainWindow.h"
 #include "src/ConfigManager.h"
 
@@ -110,8 +111,9 @@ int main(int argc, char* argv[])
         mainWindow.showMaximized();
     }
 
-    // Auto-start on launch
-    mainWindow.startAll();
+    // Don't auto-start in mqtt_subscribe mode to avoid blocking
+    // User can manually start via UI button
+    // QTimer::singleShot(100, &mainWindow, &MainWindow::startAll);
 
     int result = app.exec();
 

@@ -240,9 +240,11 @@ void VideoWidget::paintEvent(QPaintEvent*)
             painter.drawRect(QRectF(bx, by, bw, bh));
 
             // Label
+            QString classLabel = det.className.isEmpty()
+                ? QString::number(det.classId) : det.className;
             QString label = QString("%1 %2%")
-                .arg(det.classId)
-                .arg(det.confidence * 100, 0, 'f', 0);
+                .arg(classLabel)
+                .arg(qRound(det.confidence * 100));
             QFont font("Monospace", 9, QFont::Bold);
             painter.setFont(font);
             QFontMetrics fm(font);

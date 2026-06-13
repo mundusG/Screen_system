@@ -51,11 +51,11 @@ bool MQTTClient::connectToBroker(const QString& brokerUrl,
 
         qDebug() << "MQTTClient: Connecting to" << brokerUrl << "as" << clientId;
         auto tok = mClient->connect(connOpts);
-        tok->wait();
+        // Don't wait here - let it connect asynchronously
+        // tok->wait();
 
-        mConnected = true;
-        qDebug() << "MQTTClient: Connected successfully";
-        emit connected();
+        // Connection success will be signaled via callback
+        qDebug() << "MQTTClient: Connection initiated (async)";
         return true;
     }
     catch (const mqtt::exception& e) {

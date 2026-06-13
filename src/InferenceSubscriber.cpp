@@ -140,6 +140,7 @@ bool InferenceSubscriber::decodeInferenceResult(const QByteArray& json, Inferenc
         float width = static_cast<float>(bboxObj["w"].toDouble());
         float height = static_cast<float>(bboxObj["h"].toDouble());
         det.bbox = BoundingBox(x, y, width, height);
+        det.className = detObj["class_name"].toString();
 
         result.detections.append(det);
     }

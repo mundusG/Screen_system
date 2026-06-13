@@ -10,7 +10,7 @@
         "mode": "mqtt_subscribe"
     },
     "mqtt": {
-        "broker": "tcp://localhost:1883",
+        "broker": "tcp://127.0.0.1:1883",
         "client_id": "display_device",
         "username": "",
         "password": ""
@@ -41,7 +41,7 @@
             "name": "摄像头 2",
             "source": "1",
             "modelPath": "camera_1.onnx",
-            "enabled": false,
+            "enabled": true,
             "mode": "mqtt_subscribe",
             "mqtt_topic": "inference/camera/1/detections",
             "confidenceThreshold": 0.5,
@@ -61,7 +61,7 @@
             "name": "摄像头 3",
             "source": "2",
             "modelPath": "camera_2.onnx",
-            "enabled": false,
+            "enabled": true,
             "mode": "mqtt_subscribe",
             "mqtt_topic": "inference/camera/2/detections",
             "confidenceThreshold": 0.5,
@@ -81,7 +81,7 @@
             "name": "摄像头 4",
             "source": "3",
             "modelPath": "camera_3.onnx",
-            "enabled": false,
+            "enabled": true,
             "mode": "mqtt_subscribe",
             "mqtt_topic": "inference/camera/3/detections",
             "confidenceThreshold": 0.5,

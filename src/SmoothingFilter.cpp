@@ -63,6 +63,7 @@ void SmoothingFilter::processInferenceResult(const InferenceResult& result)
         track.smoothedBBox       = smoothed;
         track.rawBBox            = det.bbox;
         track.confidence         = det.confidence;
+        track.className          = det.className;
         track.framesSinceUpdate  = 0;
         track.active             = true;
         track.normalized         = det.normalized;
@@ -78,6 +79,7 @@ void SmoothingFilter::processInferenceResult(const InferenceResult& result)
         TrackState newTrack;
         newTrack.trackId          = newTrackId;
         newTrack.classId          = det.classId;
+        newTrack.className        = det.className;
         newTrack.smoothedBBox     = det.bbox;  // first detection: no smoothing
         newTrack.rawBBox          = det.bbox;
         newTrack.confidence       = det.confidence;
@@ -94,6 +96,7 @@ void SmoothingFilter::processInferenceResult(const InferenceResult& result)
         if (matchedTrackIds.contains(it.key())) continue;
 
         it.value().framesSinceUpdate++;
+        it.value().active = false;
         if (it.value().framesSinceUpdate > mMaxLostFrames) {
             tracksToRemove.append(it.key());
         }
@@ -117,6 +120,7 @@ void SmoothingFilter::processInferenceResult(const InferenceResult& result)
         Detection d;
         d.trackId    = track.trackId;
         d.classId    = track.classId;
+        d.className  = track.className;
         d.confidence = track.confidence;
         d.bbox       = track.smoothedBBox;
         d.filtered   = false;

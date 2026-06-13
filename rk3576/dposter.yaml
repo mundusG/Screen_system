@@ -1,0 +1,12 @@
+name: dposter
+enable: true
+absroot: yes
+entrypoint: /usr/bin/python3
+# isdup: true
+# dupfile: /var/log/dposter.txt
+pwd: service/dposter
+command:
+  - 'main.py'
+  - 'args.json'
+environment:
+  - version=v1

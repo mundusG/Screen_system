@@ -1,0 +1,21 @@
+{
+  "conf_thresh": {
+    "name": "置信度阈值",
+    "value": 0.0006
+  },
+  "class": {
+    "name": "识别类型",
+    "value": [
+      {
+        "id": 0,
+        "name": "人员",
+        "sub_cls": [
+          {
+            "id": 0,
+            "enable": true
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -11,6 +11,7 @@
 struct TrackState {
     int         trackId     = 0;
     int         classId     = 0;
+    QString     className;
     BoundingBox smoothedBBox;       // current smoothed position
     BoundingBox rawBBox;           // latest raw detection
     float       confidence  = 0.0f;
