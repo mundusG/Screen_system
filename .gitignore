@@ -1,4 +1,17 @@
-*.sh
-.claude/
 build/
-*.md
+.claude/
+
+# 模型文件 (大体积二进制)
+*.onnx
+*.rknn
+
+# 未使用的图片资源
+home_image.png
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# OS 生成
+.DS_Store
+Thumbs.db

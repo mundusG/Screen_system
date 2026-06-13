@@ -10,6 +10,12 @@
 
 int main(int argc, char* argv[])
 {
+#ifdef __linux__
+    if (!qEnvironmentVariableIsSet("DISPLAY"))
+        qputenv("DISPLAY", ":0");
+    qputenv("QT_XCB_GL_INTEGRATION", "none");
+#endif
+
     // High-DPI support
 #if QT_VERSION >= QT_VERSION_CHECK(5, 6, 0)
     QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);

@@ -333,3 +333,13 @@ yolo export model=best.pt format=onnx opset=12
 - [ ] 实现 Playback 回放视图
 - [ ] 实现 Snapshot 截图功能
 - [ ] 删除旧版 StatsPanel（确认无引用后）
+
+ 1. 查看网口名称：
+  ip link show | grep -E "^[0-9]"
+
+  2. 给连接摄像头的网口配静态 IP（假设网口是 eth0）：
+  sudo ip addr add 169.254.98.100/16 dev eth0
+  sudo ip link set eth0 up
+
+  3. 测试连通：
+  ping 169.254.98.43 -c 3
