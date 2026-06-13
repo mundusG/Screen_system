@@ -21,6 +21,7 @@ class SidebarWidget;
 class BottomControlBar;
 class AlertPanel;
 class InferenceSubscriber;
+class ServiceLauncher;
 
 class MainWindow : public QMainWindow
 {
@@ -84,6 +85,7 @@ private:
 
     ConfigManager* mConfigManager;
     InferenceSubscriber* mInferenceSubscriber;
+    ServiceLauncher* mServiceLauncher;
 
     bool    mRunning;
     qint64  mStartTime;

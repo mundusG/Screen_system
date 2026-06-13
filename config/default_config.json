@@ -15,6 +15,15 @@
         "username": "",
         "password": ""
     },
+    "services": {
+        "nn_bridge": {
+            "enabled": true,
+            "script": "rk3576/nn_bridge.py",
+            "config": "rk3576/bridge_config.json",
+            "python": "python3"
+        },
+        "check_mosquitto": true
+    },
     "cameras": [
         {
             "cameraId": 0,

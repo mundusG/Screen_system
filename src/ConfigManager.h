@@ -68,6 +68,13 @@ public:
     /// Get MQTT password
     QString mqttPassword() const;
 
+    /// Service auto-start configuration
+    bool    bridgeEnabled() const;
+    QString bridgeScript() const;
+    QString bridgeConfig() const;
+    QString bridgePython() const;
+    bool    checkMosquitto() const;
+
     /// Resolve config file path by searching standard locations
     static QString resolveConfigPath();
 
@@ -93,6 +100,12 @@ private:
     QString mMqttClientId;
     QString mMqttUsername;
     QString mMqttPassword;
+
+    bool    mBridgeEnabled = false;
+    QString mBridgeScript = "rk3576/nn_bridge.py";
+    QString mBridgeConfig = "rk3576/bridge_config.json";
+    QString mBridgePython = "python3";
+    bool    mCheckMosquitto = true;
 };
 
 #endif // CONFIGMANAGER_H

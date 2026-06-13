@@ -11,8 +11,7 @@
 int main(int argc, char* argv[])
 {
 #ifdef __linux__
-    if (!qEnvironmentVariableIsSet("DISPLAY"))
-        qputenv("DISPLAY", ":0");
+    qputenv("DISPLAY", ":0");
     qputenv("QT_XCB_GL_INTEGRATION", "none");
 #endif
 

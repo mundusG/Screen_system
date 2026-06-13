@@ -9,6 +9,7 @@
 #include "ConfigManager.h"
 #include "SettingsDialog.h"
 #include "InferenceSubscriber.h"
+#include "ServiceLauncher.h"
 #include "Theme.h"
 
 #include <QVBoxLayout>
@@ -25,6 +26,8 @@
 #include <QDebug>
 #include <QStandardPaths>
 #include <QDir>
+#include <QFileInfo>
+#include <QCoreApplication>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -39,6 +42,7 @@ MainWindow::MainWindow(QWidget* parent)
     , mAlertPanel(nullptr)
     , mConfigManager(new ConfigManager(this))
     , mInferenceSubscriber(nullptr)
+    , mServiceLauncher(new ServiceLauncher(this))
     , mRunning(false)
     , mStartTime(0)
     , mSelectedCamera(0)
@@ -190,6 +194,35 @@ bool MainWindow::initialize(const QString& configPath)
     // Determine system mode
     mSystemMode = mConfigManager->systemMode();
     qDebug() << "MainWindow: System mode:" << mSystemMode;
+
+    // Auto-start dependency services
+    connect(mServiceLauncher, &ServiceLauncher::serviceError,
+            this, &MainWindow::onCameraError);
+
+    if (mConfigManager->checkMosquitto()) {
+        if (!mServiceLauncher->isMosquittoRunning()) {
+            qWarning() << "MainWindow: mosquitto is NOT running! MQTT features will not work.";
+        } else {
+            qDebug() << "MainWindow: mosquitto is running";
+        }
+    }
+
+    if (mConfigManager->bridgeEnabled()) {
+        QString exeDir = QCoreApplication::applicationDirPath();
+        QString scriptPath = QDir(exeDir).absoluteFilePath(
+            "../" + mConfigManager->bridgeScript());
+        QString configPath = QDir(exeDir).absoluteFilePath(
+            "../" + mConfigManager->bridgeConfig());
+        scriptPath = QFileInfo(scriptPath).canonicalFilePath();
+        configPath = QFileInfo(configPath).canonicalFilePath();
+
+        if (!scriptPath.isEmpty() && !configPath.isEmpty()) {
+            mServiceLauncher->startNNBridge(
+                mConfigManager->bridgePython(), scriptPath, configPath);
+        } else {
+            qWarning() << "MainWindow: nn_bridge script or config not found";
+        }
+    }
 
     // Initialize MQTT subscriber if in subscribe mode (async connection)
     if (mSystemMode == "mqtt_subscribe") {

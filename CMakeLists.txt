@@ -33,6 +33,7 @@ set(SOURCES
     src/MQTTClient.cpp
     src/InferenceSubscriber.cpp
     src/InferencePublisher.cpp
+    src/ServiceLauncher.cpp
 )
 
 set(HEADERS
@@ -52,6 +53,7 @@ set(HEADERS
     src/MQTTClient.h
     src/InferenceSubscriber.h
     src/InferencePublisher.h
+    src/ServiceLauncher.h
 )
 
 # Qt resources
