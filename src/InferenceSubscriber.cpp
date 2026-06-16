@@ -32,13 +32,37 @@ bool InferenceSubscriber::connectAndSubscribe(const QString& brokerUrl,
 {
     mSubscribedTopics = topics;
 
+    // Add discovery topic if set
+    if (!mDiscoveryTopic.isEmpty() && !mSubscribedTopics.contains(mDiscoveryTopic)) {
+        mSubscribedTopics.prepend(mDiscoveryTopic);
+    }
+
     if (!mMqttClient->connectToBroker(brokerUrl, clientId, username, password)) {
         return false;
     }
 
-    // Topics will be subscribed when connection is established (via onMqttConnected)
     qDebug() << "InferenceSubscriber: MQTT connection initiated, will subscribe to" << topics.size() << "topics on connect";
     return true;
+}
+
+void InferenceSubscriber::setDiscoveryTopic(const QString& topic)
+{
+    mDiscoveryTopic = topic;
+}
+
+bool InferenceSubscriber::subscribeTopic(const QString& topic)
+{
+    if (!mMqttClient->isConnected()) {
+        mSubscribedTopics.append(topic);
+        return true;
+    }
+    if (mMqttClient->subscribe(topic)) {
+        mSubscribedTopics.append(topic);
+        qDebug() << "InferenceSubscriber: Dynamically subscribed to" << topic;
+        return true;
+    }
+    qWarning() << "InferenceSubscriber: Failed to subscribe to" << topic;
+    return false;
 }
 
 void InferenceSubscriber::disconnect()
@@ -54,8 +78,19 @@ bool InferenceSubscriber::isConnected() const
 
 void InferenceSubscriber::onMessageReceived(const QString& topic, const QByteArray& payload)
 {
-    qDebug() << "InferenceSubscriber: Received message from" << topic << "size:" << payload.size();
+    // Channel discovery message
+    if (!mDiscoveryTopic.isEmpty() && topic == mDiscoveryTopic) {
+        QVector<ChannelInfo> channels;
+        if (decodeChannelDiscovery(payload, channels)) {
+            qDebug() << "InferenceSubscriber: Discovered" << channels.size() << "channel(s)";
+            emit channelsDiscovered(channels);
+        } else {
+            qWarning() << "InferenceSubscriber: Failed to decode channel discovery";
+        }
+        return;
+    }
 
+    // Inference result message
     InferenceResult result;
     if (decodeInferenceResult(payload, result)) {
         qDebug() << "InferenceSubscriber: Decoded result for camera" << result.cameraId
@@ -145,5 +180,31 @@ bool InferenceSubscriber::decodeInferenceResult(const QByteArray& json, Inferenc
         result.detections.append(det);
     }
 
+    return true;
+}
+
+bool InferenceSubscriber::decodeChannelDiscovery(const QByteArray& json, QVector<ChannelInfo>& channels)
+{
+    QJsonParseError parseError;
+    QJsonDocument doc = QJsonDocument::fromJson(json, &parseError);
+    if (parseError.error != QJsonParseError::NoError)
+        return false;
+
+    QJsonArray arr = doc.object()["channels"].toArray();
+    if (arr.isEmpty())
+        return false;
+
+    channels.clear();
+    channels.reserve(arr.size());
+    for (const QJsonValue& val : arr) {
+        QJsonObject obj = val.toObject();
+        ChannelInfo info;
+        info.cameraId       = obj["camera_id"].toInt();
+        info.chid            = obj["chid"].toInt();
+        info.name            = obj["name"].toString(QString("camera_%1").arg(info.cameraId));
+        info.previewUrl      = obj["preview_url"].toString();
+        info.inferenceTopic  = obj["inference_topic"].toString();
+        channels.append(info);
+    }
     return true;
 }

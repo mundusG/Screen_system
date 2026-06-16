@@ -1,7 +1,7 @@
 {
   "conf_thresh": {
     "name": "置信度阈值",
-    "value": 0.6
+    "value": 0.5
   },
   "class": {
     "name": "识别类型",

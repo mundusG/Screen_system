@@ -1,6 +1,7 @@
 ﻿#include "CameraCapture.h"
 #include <QDebug>
 #include <QDateTime>
+#include <cstdlib>
 
 // ============================================================
 // CameraCapture implementation
@@ -30,28 +31,31 @@ bool CameraCapture::open(const QString& source)
     QMutexLocker locker(&mMutex);
     mSource = source;
 
-    // Try to open as integer (USB camera index) first, then as string (RTSP/file)
     bool ok = false;
     int deviceIndex = source.toInt(&ok);
+    bool isRtsp = source.startsWith("rtsp://", Qt::CaseInsensitive);
 
-    if (ok) {
-        // USB/CSI camera by index
-        mCapture.open(deviceIndex, cv::CAP_V4L2);  // V4L2 for Linux
-        if (!mCapture.isOpened()) {
-            // Fallback: try generic API
-            mCapture.open(deviceIndex);
+    try {
+        if (ok) {
+            mCapture.open(deviceIndex, cv::CAP_V4L2);
+            if (!mCapture.isOpened())
+                mCapture.open(deviceIndex);
+        } else if (isRtsp) {
+            setenv("OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                   "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay", 1);
+            mCapture.open(source.toStdString(), cv::CAP_FFMPEG);
+            unsetenv("OPENCV_FFMPEG_CAPTURE_OPTIONS");
+        } else {
+            mCapture.open(source.toStdString(), cv::CAP_FFMPEG);
+            if (!mCapture.isOpened())
+                mCapture.open(source.toStdString());
         }
-    } else {
-        // RTSP stream, video file, or device path
-        mCapture.open(source.toStdString(), cv::CAP_FFMPEG);
-        if (!mCapture.isOpened()) {
-            // Try as device path
-            mCapture.open(source.toStdString(), cv::CAP_V4L2);
-        }
-        if (!mCapture.isOpened()) {
-            // Final fallback
-            mCapture.open(source.toStdString());
-        }
+    } catch (const std::exception& e) {
+        qWarning() << "CameraCapture[" << mCameraId << "]: Exception opening source:" << e.what();
+        return false;
+    } catch (...) {
+        qWarning() << "CameraCapture[" << mCameraId << "]: Unknown exception opening source:" << source;
+        return false;
     }
 
     if (!mCapture.isOpened()) {
@@ -59,12 +63,13 @@ bool CameraCapture::open(const QString& source)
         return false;
     }
 
-    // Configure capture properties
-    mCapture.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
-    mCapture.set(cv::CAP_PROP_FRAME_WIDTH,  1920);
-    mCapture.set(cv::CAP_PROP_FRAME_HEIGHT, 1080);
-    mCapture.set(cv::CAP_PROP_FPS, 30);
-    mCapture.set(cv::CAP_PROP_BUFFERSIZE, 3);  // reduce latency
+    if (ok) {
+        mCapture.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M', 'J', 'P', 'G'));
+        mCapture.set(cv::CAP_PROP_FRAME_WIDTH,  1920);
+        mCapture.set(cv::CAP_PROP_FRAME_HEIGHT, 1080);
+        mCapture.set(cv::CAP_PROP_FPS, 30);
+    }
+    mCapture.set(cv::CAP_PROP_BUFFERSIZE, 1);
 
     qDebug() << "CameraCapture[" << mCameraId << "]: Opened source:" << source
              << "resolution:" << mCapture.get(cv::CAP_PROP_FRAME_WIDTH) << "x"
@@ -148,8 +153,12 @@ void CameraCapture::captureOne()
         QMutexLocker locker(&mMutex);
         if (!mCapture.isOpened()) return;
 
-        // Grab-decode in one call
-        mCapture >> frame;
+        try {
+            mCapture >> frame;
+        } catch (...) {
+            qWarning() << "CameraCapture[" << mCameraId << "]: Exception during frame capture";
+            return;
+        }
     }
 
     if (frame.empty()) {

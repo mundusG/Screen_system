@@ -56,6 +56,7 @@ private slots:
     void onGridModeChanged(int mode);
     void onToggleFullscreen();
     void onSnapshotRequested();
+    void onChannelsDiscovered(const QVector<ChannelInfo>& channels);
 
 private:
     void setupUI();
@@ -94,6 +95,7 @@ private:
     int     mSelectedCamera;
     int     mGridMode;
     QMap<int, bool> mCameraRunning;
+    QMap<int, ChannelInfo> mChannelInfos;
     QString mSystemMode; // "local_inference", "mqtt_publish", "mqtt_subscribe"
 };
 

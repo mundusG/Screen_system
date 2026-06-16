@@ -23,6 +23,12 @@ public:
                              const QString& username = QString(),
                              const QString& password = QString());
 
+    /// Set the discovery topic to subscribe to for channel auto-discovery
+    void setDiscoveryTopic(const QString& topic);
+
+    /// Subscribe to an additional topic at runtime
+    bool subscribeTopic(const QString& topic);
+
     /// Disconnect from broker
     void disconnect();
 
@@ -32,6 +38,9 @@ public:
 signals:
     /// Emitted when inference result is received and decoded
     void inferenceFinished(const InferenceResult& result);
+
+    /// Emitted when channel discovery message is received
+    void channelsDiscovered(const QVector<ChannelInfo>& channels);
 
     /// Emitted on errors
     void error(const QString& message);
@@ -46,8 +55,12 @@ private:
     /// Decode JSON payload to InferenceResult
     bool decodeInferenceResult(const QByteArray& json, InferenceResult& result);
 
+    /// Decode channel discovery JSON
+    bool decodeChannelDiscovery(const QByteArray& json, QVector<ChannelInfo>& channels);
+
     MQTTClient* mMqttClient;
     QStringList mSubscribedTopics;
+    QString mDiscoveryTopic;
 };
 
 #endif // INFERENCESUBSCRIBER_H

@@ -11,36 +11,13 @@
         "qos": 0
     },
     "client_id": "nn_bridge_rk3576",
+    "geid": 200,
     "stats_interval": 30,
     "rate_limit": 0,
-    "channels": [
-        {
-            "camera_id": 0,
-            "chid": 0,
-            "geid": 200,
-            "subscribe_topic": "/dposter/200/cmd",
-            "publish_topic": "inference/camera/0/detections"
-        },
-        {
-            "camera_id": 1,
-            "chid": 1,
-            "geid": 200,
-            "subscribe_topic": "/dposter/200/cmd",
-            "publish_topic": "inference/camera/1/detections"
-        },
-        {
-            "camera_id": 2,
-            "chid": 2,
-            "geid": 200,
-            "subscribe_topic": "/dposter/200/cmd",
-            "publish_topic": "inference/camera/2/detections"
-        },
-        {
-            "camera_id": 3,
-            "chid": 3,
-            "geid": 200,
-            "subscribe_topic": "/dposter/200/cmd",
-            "publish_topic": "inference/camera/3/detections"
-        }
-    ]
+    "channel_timeout": 30,
+    "preview": {
+        "host": "192.168.77.145",
+        "port": 5544
+    },
+    "discovery_topic": "inference/bridge/channels"
 }

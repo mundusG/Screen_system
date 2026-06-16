@@ -121,10 +121,20 @@ struct DisplayResult {
     bool             fresh       = false; // whether this is a new inference result
 };
 
+/// Channel info discovered from inference bridge via MQTT
+struct ChannelInfo {
+    int     cameraId        = 0;
+    int     chid            = 0;
+    QString name;
+    QString previewUrl;         // rtsp://host:port/preview/chid
+    QString inferenceTopic;     // inference/camera/{id}/detections
+};
+
 // Register types for Qt signal/slot system
 Q_DECLARE_METATYPE(FrameData)
 Q_DECLARE_METATYPE(InferenceResult)
 Q_DECLARE_METATYPE(DisplayResult)
+Q_DECLARE_METATYPE(ChannelInfo)
 Q_DECLARE_METATYPE(CameraConfig)
 Q_DECLARE_METATYPE(cv::Mat)
 

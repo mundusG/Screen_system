@@ -75,6 +75,9 @@ public:
     QString bridgePython() const;
     bool    checkMosquitto() const;
 
+    /// MQTT discovery topic for channel auto-discovery
+    QString discoveryTopic() const;
+
     /// Resolve config file path by searching standard locations
     static QString resolveConfigPath();
 
@@ -106,6 +109,7 @@ private:
     QString mBridgeConfig = "rk3576/bridge_config.json";
     QString mBridgePython = "python3";
     bool    mCheckMosquitto = true;
+    QString mDiscoveryTopic = "inference/bridge/channels";
 };
 
 #endif // CONFIGMANAGER_H

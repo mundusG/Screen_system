@@ -1,0 +1,10 @@
+name: nn_server
+enable: true
+entrypoint: ../../../service/nn_server/bin/nn_server
+isdup: true
+command:
+  - '-c'
+  - 'nn_server.conf'
+environment:
+  - version=v1
+  - LD_LIBRARY_PATH=/oem/usr/lib/

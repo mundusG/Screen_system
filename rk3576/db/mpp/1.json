@@ -1,0 +1,60 @@
+{
+  "cmd": "add_ch_req",
+  "sname": "dmg",
+  "sid": 0,
+  "param": {
+    "chid": 1,
+    "ip": "127.0.0.1",
+    "mode": 0,
+    "is_rtd": true,
+    "detect_enable": true,
+    "models": [
+      {
+        "mid": 200,
+        "cids": [0]
+      }
+    ],
+    "location": "",
+    "framerate": 1000,
+    "isSrc": false,
+    "isCacheSrc": false,
+    "desc": "camera_1",
+    "preview": {
+      "enable": true
+    },
+    "vin": {
+      "enable": true,
+      "param": {
+        "stream": {
+          "url": "rtsp://admin:qs%40123456@169.254.98.43:554/Streaming/Channels/101",
+          "inner_url": "rtsp://127.0.0.1:5544/preview/1"
+        }
+      }
+    },
+    "decoder": {
+      "enable": true,
+      "param": {
+        "dec_type": 0
+      }
+    },
+    "encoder": {
+      "enable": true,
+      "param": {
+        "enc_type": 0,
+        "width": 640,
+        "height": 480,
+        "fps": 15
+      }
+    },
+    "interest_area": [],
+    "line_pos": [],
+    "max_num": 100,
+    "record": {
+      "is_record": false,
+      "is_send_video": false,
+      "pre_time": 10,
+      "after_time": 10
+    }
+  },
+  "seq": 1
+}

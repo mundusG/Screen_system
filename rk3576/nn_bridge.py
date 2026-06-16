@@ -4,39 +4,25 @@ nn_bridge.py - 桥接 nn_server 推理输出到显示系统
 
 订阅 nn_server 的本地 MQTT 输出 (/dposter/{geid}/cmd)，
 将检测结果转换为显示系统的归一化坐标格式，
-发布到 inference/camera/{camera_id}/detections。
+发布到 inference/camera/{chid}/detections。
 
-支持多通道: 单 nn_server 实例通过 param.chid 区分不同摄像头通道，
-bridge 按 chid 路由到不同 camera_id。
+自动发现模式: 无需预配置通道列表，从 MQTT 消息流中自动发现活跃通道，
+通道超时无数据自动标记离线。
 
 用法:
     python3 nn_bridge.py config.json
 
 配置文件示例 (config.json):
 {
-    "mqtt_local": {
-        "host": "127.0.0.1",
-        "port": 1883
-    },
-    "mqtt_remote": {
-        "host": "192.168.1.100",
-        "port": 1883,
-        "username": "",
-        "password": "",
-        "qos": 0
-    },
+    "mqtt_local": {"host": "127.0.0.1", "port": 1883},
+    "mqtt_remote": {"host": "192.168.1.100", "port": 1883},
     "client_id": "nn_bridge_rk3576",
+    "geid": 200,
     "stats_interval": 30,
     "rate_limit": 0,
-    "channels": [
-        {
-            "camera_id": 0,
-            "chid": 0,
-            "geid": 58,
-            "subscribe_topic": "/dposter/58/cmd",
-            "publish_topic": "inference/camera/0/detections"
-        }
-    ]
+    "channel_timeout": 30,
+    "preview": {"host": "192.168.1.100", "port": 5544},
+    "discovery_topic": "inference/bridge/channels"
 }
 """
 
@@ -44,7 +30,6 @@ import json
 import sys
 import time
 import signal
-import threading
 import paho.mqtt.client as mqtt
 from loguru import logger
 
@@ -92,33 +77,43 @@ class NNBridge:
         self.remote_client = None
         self.running = True
 
-        # topic-based routing (legacy compat)
-        self.topic_channels = {}  # subscribe_topic -> [channel configs]
-        # chid-based routing (primary)
-        self.chid_map = {}  # chid -> channel config
-        self.frame_counters = {}  # camera_id -> frame count
-        self.channel_stats = {}  # camera_id -> ChannelStats
-        # deduplicate subscriptions
-        self.subscribe_topics = set()
+        self.geid = self.config.get('geid', 200)
+        self.subscribe_topic = f"/dposter/{self.geid}/cmd"
 
         self.qos = self.config.get('mqtt_remote', {}).get('qos', 0)
         self.stats_interval = self.config.get('stats_interval', 30)
         self.rate_limit = self.config.get('rate_limit', 0)
+        self.channel_timeout = self.config.get('channel_timeout', 30)
         self.last_publish_time = {}
 
-        for ch in self.config['channels']:
-            cam_id = ch['camera_id']
-            self.frame_counters[cam_id] = 0
-            self.channel_stats[cam_id] = ChannelStats()
-            self.subscribe_topics.add(ch['subscribe_topic'])
+        preview_cfg = self.config.get('preview', {})
+        self.preview_host = preview_cfg.get('host', '127.0.0.1')
+        self.preview_port = preview_cfg.get('port', 5544)
+        self.discovery_topic = self.config.get('discovery_topic', 'inference/bridge/channels')
 
-            if 'chid' in ch:
-                self.chid_map[ch['chid']] = ch
+        # Auto-discovered channels: chid -> channel state
+        self.active_channels = {}
+        self.discovery_changed = True
 
-            topic = ch['subscribe_topic']
-            if topic not in self.topic_channels:
-                self.topic_channels[topic] = []
-            self.topic_channels[topic].append(ch)
+    def _register_channel(self, chid):
+        self.active_channels[chid] = {
+            'camera_id': chid,
+            'publish_topic': f'inference/camera/{chid}/detections',
+            'frame_count': 0,
+            'last_seen': time.time(),
+            'stats': ChannelStats(),
+        }
+        self.discovery_changed = True
+        logger.info("Auto-discovered channel chid={}", chid)
+
+    def _check_channel_timeout(self):
+        now = time.time()
+        timed_out = [chid for chid, ch in self.active_channels.items()
+                     if now - ch['last_seen'] > self.channel_timeout]
+        for chid in timed_out:
+            logger.info("Channel chid={} timed out, removing", chid)
+            del self.active_channels[chid]
+            self.discovery_changed = True
 
     def start(self):
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -127,19 +122,16 @@ class NNBridge:
         local_cfg = self.config['mqtt_local']
         remote_cfg = self.config['mqtt_remote']
 
-        # Setup local MQTT client
         self.local_client = mqtt.Client(f"nn_bridge_sub_{int(time.time())}")
         self.local_client.on_connect = self._on_local_connect
         self.local_client.on_message = self._on_local_message
         self.local_client.on_disconnect = self._on_local_disconnect
 
-        # Setup remote MQTT client with LWT
         client_id = self.config.get('client_id', f"nn_bridge_pub_{int(time.time())}")
         self.remote_client = mqtt.Client(client_id)
         self.remote_client.on_connect = self._on_remote_connect
         self.remote_client.on_disconnect = self._on_remote_disconnect
 
-        # LWT: notify display system when bridge goes offline
         lwt_topic = "inference/bridge/status"
         lwt_payload = json.dumps({"status": "offline", "client_id": client_id})
         self.remote_client.will_set(lwt_topic, lwt_payload, qos=1, retain=True)
@@ -148,33 +140,33 @@ class NNBridge:
             self.remote_client.username_pw_set(
                 remote_cfg['username'], remote_cfg.get('password', ''))
 
-        # Connect with retry
         self._connect_with_retry(
             self.local_client, local_cfg['host'], local_cfg['port'], "local")
         self._connect_with_retry(
             self.remote_client, remote_cfg['host'], remote_cfg['port'], "remote")
 
-        # Publish online status
         online_payload = json.dumps({
             "status": "online",
             "client_id": client_id,
-            "channels": len(self.config['channels']),
         })
         self.remote_client.publish(lwt_topic, online_payload, qos=1, retain=True)
 
-        # Start MQTT loops
         self.local_client.loop_start()
         self.remote_client.loop_start()
 
-        logger.info("NN Bridge started, {} channel(s), stats every {}s",
-                     len(self.config['channels']), self.stats_interval)
+        logger.info("NN Bridge started (auto-discovery), geid={}, topic={}, stats every {}s",
+                     self.geid, self.subscribe_topic, self.stats_interval)
 
-        # Main loop with periodic stats
         try:
             while self.running:
                 time.sleep(self.stats_interval)
-                if self.running:
-                    self._print_stats()
+                if not self.running:
+                    break
+                self._check_channel_timeout()
+                self._print_stats()
+                if self.discovery_changed:
+                    self._publish_discovery()
+                    self.discovery_changed = False
         except KeyboardInterrupt:
             pass
 
@@ -198,6 +190,27 @@ class NNBridge:
         logger.info("Received signal {}, shutting down...", signum)
         self.running = False
 
+    def _build_discovery_message(self):
+        channels = []
+        for chid in sorted(self.active_channels):
+            ch = self.active_channels[chid]
+            preview_url = f"rtsp://{self.preview_host}:{self.preview_port}/preview/{chid}"
+            channels.append({
+                'camera_id': ch['camera_id'],
+                'chid': chid,
+                'name': f"camera_{chid}",
+                'preview_url': preview_url,
+                'inference_topic': ch['publish_topic'],
+            })
+        return json.dumps({'channels': channels})
+
+    def _publish_discovery(self):
+        if not self.remote_client:
+            return
+        payload = self._build_discovery_message()
+        self.remote_client.publish(self.discovery_topic, payload, qos=1, retain=True)
+        logger.info("Published discovery: {} active channel(s)", len(self.active_channels))
+
     def _shutdown(self):
         logger.info("Shutting down...")
         self._print_stats()
@@ -208,6 +221,9 @@ class NNBridge:
             try:
                 self.remote_client.publish(
                     "inference/bridge/status", offline_payload, qos=1, retain=True)
+                # Clear discovery on shutdown
+                self.remote_client.publish(
+                    self.discovery_topic, json.dumps({'channels': []}), qos=1, retain=True)
                 time.sleep(0.2)
             except Exception:
                 pass
@@ -226,9 +242,8 @@ class NNBridge:
                          rc, mqtt.connack_string(rc))
             return
         logger.info("Connected to local broker")
-        for topic in self.subscribe_topics:
-            client.subscribe(topic)
-            logger.info("Subscribed to: {}", topic)
+        client.subscribe(self.subscribe_topic)
+        logger.info("Subscribed to: {}", self.subscribe_topic)
 
     def _on_local_disconnect(self, client, userdata, rc):
         if rc != 0:
@@ -259,21 +274,16 @@ class NNBridge:
         param = payload.get('param', {})
         nn_output = param.get('nn_output', [])
         chid = param.get('chid', -1)
+        if chid < 0:
+            return
 
-        # Route by chid (primary) or by topic (fallback)
-        channel = self.chid_map.get(chid)
-        if channel is None:
-            topic_channels = self.topic_channels.get(msg.topic, [])
-            if len(topic_channels) == 1:
-                channel = topic_channels[0]
-            elif len(topic_channels) > 1:
-                logger.warning("chid {} not in chid_map, topic {} has {} channels, skipping",
-                               chid, msg.topic, len(topic_channels))
-                return
-            else:
-                return
+        # Auto-register new channel
+        if chid not in self.active_channels:
+            self._register_channel(chid)
 
-        camera_id = channel['camera_id']
+        ch = self.active_channels[chid]
+        ch['last_seen'] = time.time()
+        camera_id = ch['camera_id']
 
         # Rate limiting
         if self.rate_limit > 0:
@@ -284,7 +294,7 @@ class NNBridge:
                 return
             self.last_publish_time[camera_id] = now
 
-        self.frame_counters[camera_id] += 1
+        ch['frame_count'] += 1
 
         # Convert nn_output to normalized format
         detections = []
@@ -324,32 +334,32 @@ class NNBridge:
         output_msg = {
             'camera_id': camera_id,
             'timestamp': now_ms,
-            'frame_index': self.frame_counters[camera_id],
+            'frame_index': ch['frame_count'],
             'normalized': True,
             'detections': detections,
             'inference_time_ms': 0,
         }
 
-        # Publish
-        pub_topic = channel['publish_topic']
+        pub_topic = ch['publish_topic']
         self.remote_client.publish(pub_topic, json.dumps(output_msg), qos=self.qos)
 
         # Record stats
         src_ts = param.get('timestamp', 0)
         latency = (now_ms - src_ts) if src_ts > 0 else 0
-        self.channel_stats[camera_id].record(latency)
+        ch['stats'].record(latency)
 
-        if self.frame_counters[camera_id] % 100 == 1:
+        if ch['frame_count'] % 100 == 1:
             logger.info("cam[{}] chid={} frame={} dets={} topic={}",
-                        camera_id, chid, self.frame_counters[camera_id],
+                        camera_id, chid, ch['frame_count'],
                         len(detections), pub_topic)
 
     def _print_stats(self):
         parts = []
-        for cam_id in sorted(self.channel_stats):
-            s = self.channel_stats[cam_id].report_and_reset()
+        for chid in sorted(self.active_channels):
+            ch = self.active_channels[chid]
+            s = ch['stats'].report_and_reset()
             if s['count'] > 0:
-                parts.append(f"cam[{cam_id}]: {s['count']}msg {s['rate']}msg/s "
+                parts.append(f"ch[{chid}]: {s['count']}msg {s['rate']}msg/s "
                              f"lat={s['avg_latency_ms']}ms")
         if parts:
             logger.info("Stats | {}", " | ".join(parts))

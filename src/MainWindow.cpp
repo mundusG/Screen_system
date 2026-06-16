@@ -227,32 +227,26 @@ bool MainWindow::initialize(const QString& configPath)
     // Initialize MQTT subscriber if in subscribe mode (async connection)
     if (mSystemMode == "mqtt_subscribe") {
         mInferenceSubscriber = new InferenceSubscriber(this);
+        mInferenceSubscriber->setDiscoveryTopic(mConfigManager->discoveryTopic());
+
         connect(mInferenceSubscriber, &InferenceSubscriber::inferenceFinished,
                 this, &MainWindow::onInferenceFinished);
+        connect(mInferenceSubscriber, &InferenceSubscriber::channelsDiscovered,
+                this, &MainWindow::onChannelsDiscovered);
         connect(mInferenceSubscriber, &InferenceSubscriber::error,
                 this, &MainWindow::onCameraError);
 
-        // Build topic list from camera configs
-        QStringList topics;
-        auto configs = mConfigManager->allConfigs();
-        for (const auto& cfg : configs) {
-            if (cfg.enabled && !cfg.mqttTopic.isEmpty()) {
-                topics.append(cfg.mqttTopic);
-            }
-        }
-
-        // Connect to MQTT broker asynchronously using QTimer
-        if (!topics.isEmpty()) {
-            QTimer::singleShot(0, this, [this, topics]() {
-                mInferenceSubscriber->connectAndSubscribe(
-                    mConfigManager->mqttBroker(),
-                    mConfigManager->mqttClientId(),
-                    topics,
-                    mConfigManager->mqttUsername(),
-                    mConfigManager->mqttPassword()
-                );
-            });
-        }
+        // Connect to MQTT broker; discovery topic is auto-subscribed,
+        // inference topics will be added dynamically when channels are discovered
+        QTimer::singleShot(0, this, [this]() {
+            mInferenceSubscriber->connectAndSubscribe(
+                mConfigManager->mqttBroker(),
+                mConfigManager->mqttClientId(),
+                QStringList(),
+                mConfigManager->mqttUsername(),
+                mConfigManager->mqttPassword()
+            );
+        });
     }
 
     auto configs = mConfigManager->allConfigs();
@@ -263,6 +257,10 @@ bool MainWindow::initialize(const QString& configPath)
         }
         // Update alert panel device names
         mAlertPanel->updateDeviceStatus(cfg.cameraId, cfg.name, false, 0.0, 0);
+
+        // In mqtt_subscribe mode, pipelines are created when channels are discovered
+        if (mSystemMode == "mqtt_subscribe")
+            continue;
 
         if (cfg.enabled) {
             setupCameraPipeline(cfg.cameraId, cfg);
@@ -405,11 +403,18 @@ void MainWindow::startAll()
 
     for (auto it = mCameraThreads.begin(); it != mCameraThreads.end(); ++it) {
         int camId = it.key();
-        auto configs = mConfigManager->allConfigs();
         QString source;
-        for (const auto& cfg : configs) {
-            if (cfg.cameraId == camId) { source = cfg.source; break; }
+
+        // Use preview URL from discovered channels (mqtt_subscribe mode)
+        if (mChannelInfos.contains(camId)) {
+            source = mChannelInfos[camId].previewUrl;
+        } else {
+            auto configs = mConfigManager->allConfigs();
+            for (const auto& cfg : configs) {
+                if (cfg.cameraId == camId) { source = cfg.source; break; }
+            }
         }
+
         it.value()->requestStart(source);
         mCameraRunning[camId] = true;
         mAlertPanel->setCameraRunning(camId, true);
@@ -460,10 +465,14 @@ void MainWindow::toggleCamera(int cameraId)
         if (cameraId < mVideoWidgets.size())
             mVideoWidgets[cameraId]->showNoSignal();
     } else {
-        auto configs = mConfigManager->allConfigs();
         QString source;
-        for (const auto& cfg : configs) {
-            if (cfg.cameraId == cameraId) { source = cfg.source; break; }
+        if (mChannelInfos.contains(cameraId)) {
+            source = mChannelInfos[cameraId].previewUrl;
+        } else {
+            auto configs = mConfigManager->allConfigs();
+            for (const auto& cfg : configs) {
+                if (cfg.cameraId == cameraId) { source = cfg.source; break; }
+            }
         }
         mCameraThreads[cameraId]->requestStart(source);
         mCameraRunning[cameraId] = true;
@@ -475,6 +484,26 @@ void MainWindow::openSettings()
 {
     SettingsDialog dlg(mConfigManager, this);
     connect(&dlg, &SettingsDialog::settingsSaved, this, [this]() {
+        if (mSystemMode == "mqtt_subscribe") {
+            // Just update detection params in-place, no pipeline teardown needed
+            auto configs = mConfigManager->allConfigs();
+            for (const auto& cfg : configs) {
+                if (cfg.cameraId < mVideoWidgets.size())
+                    mVideoWidgets[cfg.cameraId]->setTitle(cfg.name);
+
+                if (mSmoothingFilters.contains(cfg.cameraId)) {
+                    mSmoothingFilters[cfg.cameraId]->setAlpha(cfg.smoothingAlpha);
+                    mSmoothingFilters[cfg.cameraId]->setMaxLostFrames(cfg.trackMaxLost);
+                }
+                if (mVideoWidgets.size() > cfg.cameraId)
+                    mVideoWidgets[cfg.cameraId]->setConfidenceThreshold(cfg.confidenceThreshold);
+
+                mAlertPanel->updateDeviceStatus(cfg.cameraId, cfg.name,
+                    mCameraRunning.value(cfg.cameraId, false), 0.0, 0);
+            }
+            return;
+        }
+
         bool wasRunning = mRunning;
         if (wasRunning) stopAll();
 
@@ -645,6 +674,59 @@ void MainWindow::onSnapshotRequested()
 // Pipeline signal handlers
 // ================================================================
 
+void MainWindow::onChannelsDiscovered(const QVector<ChannelInfo>& channels)
+{
+    qDebug() << "MainWindow: Discovered" << channels.size() << "channel(s) from bridge";
+
+    bool pipelinesCreated = false;
+    for (const auto& ch : channels) {
+        // Skip if pipeline already exists for this camera
+        if (mCameraThreads.contains(ch.cameraId))
+            continue;
+
+        mChannelInfos[ch.cameraId] = ch;
+
+        // Update VideoWidget title
+        if (ch.cameraId < mVideoWidgets.size())
+            mVideoWidgets[ch.cameraId]->setTitle(ch.name);
+
+        // Update AlertPanel
+        mAlertPanel->updateDeviceStatus(ch.cameraId, ch.name, false, 0.0, 0);
+
+        // Create pipeline using a default CameraConfig
+        CameraConfig cfg;
+        cfg.cameraId = ch.cameraId;
+        cfg.name = ch.name;
+        cfg.source = ch.previewUrl;
+        cfg.mode = "mqtt_subscribe";
+        cfg.mqttTopic = ch.inferenceTopic;
+        cfg.enabled = true;
+        setupCameraPipeline(ch.cameraId, cfg);
+        pipelinesCreated = true;
+
+        // Subscribe to inference topic
+        if (mInferenceSubscriber && !ch.inferenceTopic.isEmpty())
+            mInferenceSubscriber->subscribeTopic(ch.inferenceTopic);
+
+        qDebug() << "MainWindow: Channel" << ch.cameraId
+                 << "name:" << ch.name
+                 << "preview:" << ch.previewUrl
+                 << "topic:" << ch.inferenceTopic;
+    }
+
+    // Auto-start new pipelines if system is already running
+    if (pipelinesCreated && mRunning) {
+        for (const auto& ch : channels) {
+            if (mCameraThreads.contains(ch.cameraId) && !mCameraRunning.value(ch.cameraId, false)) {
+                mCameraThreads[ch.cameraId]->requestStart(ch.previewUrl);
+                mCameraRunning[ch.cameraId] = true;
+                mAlertPanel->setCameraRunning(ch.cameraId, true);
+            }
+        }
+        updatePanels();
+    }
+}
+
 void MainWindow::onConfidenceThresholdChanged(int cameraId, float threshold)
 {
     mConfigManager->setConfidenceThreshold(cameraId, threshold);
@@ -674,6 +756,9 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
 {
     int camId = result.cameraId;
 
+    if (!mCameraRunning.value(camId, false))
+        return;
+
     qDebug() << "MainWindow::onInferenceFinished: camera" << camId
              << "detections:" << result.detections.size();
 
@@ -687,28 +772,34 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
         mVideoWidgets[camId]->updateInferenceTime(result.inferenceTimeMs);
     }
 
-    // Feed alerts for high-confidence detections
-    QImage thumbnail;
-    bool thumbnailGrabbed = false;
+    float bestConf = 0.0f;
+    int bestClassId = -1;
     for (const auto& det : result.detections) {
-        if (det.confidence >= 0.6f && camId < mVideoWidgets.size()) {
-            if (!thumbnailGrabbed) {
-                thumbnail = mVideoWidgets[camId]->grabThumbnail(100);
-                thumbnailGrabbed = true;
-            }
-            auto configs = mConfigManager->allConfigs();
-            QString camName;
-            for (const auto& cfg : configs) {
-                if (cfg.cameraId == camId) { camName = cfg.name; break; }
-            }
-            mAlertPanel->addAlert(camId, camName, det.classId, det.confidence, thumbnail);
+        if (det.confidence > bestConf) {
+            bestConf = det.confidence;
+            bestClassId = det.classId;
         }
+    }
+    if (bestConf >= 0.6f && camId < mVideoWidgets.size()) {
+        QImage thumbnail = mVideoWidgets[camId]->grabThumbnail(100);
+        QString camName;
+        auto configs = mConfigManager->allConfigs();
+        for (const auto& cfg : configs) {
+            if (cfg.cameraId == camId) { camName = cfg.name; break; }
+        }
+        if (camName.isEmpty() && mChannelInfos.contains(camId))
+            camName = mChannelInfos[camId].name;
+        mAlertPanel->addAlert(camId, camName, bestClassId, bestConf, thumbnail);
     }
 }
 
 void MainWindow::onDisplayResultReady(const DisplayResult& result)
 {
     int camId = result.cameraId;
+
+    if (!mCameraRunning.value(camId, false))
+        return;
+
     qDebug() << "MainWindow::onDisplayResultReady: camera" << camId
              << "detections:" << result.detections.size();
 

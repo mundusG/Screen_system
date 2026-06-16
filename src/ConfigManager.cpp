@@ -64,6 +64,9 @@ bool ConfigManager::loadFromFile(const QString& filePath)
     mBridgePython  = bridgeObj["python"].toString("python3");
     mCheckMosquitto = servicesObj["check_mosquitto"].toBool(true);
 
+    // Read discovery topic
+    mDiscoveryTopic = mqttObj["discovery_topic"].toString("inference/bridge/channels");
+
     for (int i = 0; i < cameras.size(); ++i) {
         QJsonObject camObj = cameras[i].toObject();
         mConfigs.append(parseCameraJson(camObj, i));
@@ -291,6 +294,12 @@ bool ConfigManager::checkMosquitto() const
 {
     QMutexLocker locker(&mMutex);
     return mCheckMosquitto;
+}
+
+QString ConfigManager::discoveryTopic() const
+{
+    QMutexLocker locker(&mMutex);
+    return mDiscoveryTopic;
 }
 
 QString ConfigManager::resolveConfigPath()

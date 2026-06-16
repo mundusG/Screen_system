@@ -10,7 +10,7 @@
         "mode": "mqtt_subscribe"
     },
     "mqtt": {
-        "broker": "tcp://127.0.0.1:1883",
+        "broker": "tcp://192.168.77.145:1883",
         "client_id": "display_device",
         "username": "",
         "password": ""
@@ -27,7 +27,7 @@
     "cameras": [
         {
             "cameraId": 0,
-            "name": "test 1",
+            "name": "摄像头 1",
             "source": "rtsp://admin:qs%40123456@169.254.98.43:554/Streaming/Channels/101",
             "modelPath": "best.onnx",
             "enabled": true,
