@@ -1,7 +1,6 @@
 ﻿#include "CameraCapture.h"
 #include <QDebug>
 #include <QDateTime>
-#include <cstdlib>
 
 // ============================================================
 // CameraCapture implementation
@@ -41,10 +40,8 @@ bool CameraCapture::open(const QString& source)
             if (!mCapture.isOpened())
                 mCapture.open(deviceIndex);
         } else if (isRtsp) {
-            setenv("OPENCV_FFMPEG_CAPTURE_OPTIONS",
-                   "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay", 1);
+            // OPENCV_FFMPEG_CAPTURE_OPTIONS set globally in main.cpp
             mCapture.open(source.toStdString(), cv::CAP_FFMPEG);
-            unsetenv("OPENCV_FFMPEG_CAPTURE_OPTIONS");
         } else {
             mCapture.open(source.toStdString(), cv::CAP_FFMPEG);
             if (!mCapture.isOpened())
@@ -188,7 +185,6 @@ void CameraCapture::captureOne()
     emit displayFrameReady(data);
 
     // Emit inference frame at configured interval
-    // Default: every 1000ms / 33ms ≈ every 30th frame
     int framesPerInference = mInferenceIntervalMs / 33;
     if (framesPerInference < 1) framesPerInference = 1;
 

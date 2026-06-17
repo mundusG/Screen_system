@@ -29,6 +29,22 @@ InferenceSubscriber::InferenceSubscriber(QObject* parent)
             this, &InferenceSubscriber::onMessageReceived);
     connect(mMqttClient, &MQTTClient::error,
             this, &InferenceSubscriber::onMqttError);
+
+    // Rate-limit timer: batch-emit stored results at fixed interval
+    mThrottleTimer = new QTimer(this);
+    mThrottleTimer->setTimerType(Qt::PreciseTimer);
+    connect(mThrottleTimer, &QTimer::timeout, this, &InferenceSubscriber::flushResults);
+    mThrottleTimer->start(mThrottleIntervalMs);
+}
+
+void InferenceSubscriber::setThrottleInterval(int ms)
+{
+    mThrottleIntervalMs = qMax(0, ms);
+    if (mThrottleIntervalMs == 0) {
+        mThrottleTimer->stop();
+    } else {
+        mThrottleTimer->start(mThrottleIntervalMs);
+    }
 }
 
 InferenceSubscriber::~InferenceSubscriber()
@@ -90,7 +106,7 @@ bool InferenceSubscriber::isConnected() const
 
 void InferenceSubscriber::onMessageReceived(const QString& topic, const QByteArray& payload)
 {
-    // Channel discovery message
+    // Channel discovery message — always emit immediately
     if (!mDiscoveryTopic.isEmpty() && matchesMqttPattern(mDiscoveryTopic, topic)) {
         QVector<ChannelInfo> channels;
         if (decodeChannelDiscovery(payload, channels)) {
@@ -102,14 +118,27 @@ void InferenceSubscriber::onMessageReceived(const QString& topic, const QByteArr
         return;
     }
 
-    // Inference result message
+    // Inference result — store latest per camera, timer emits in batches.
+    // This prevents flooding the main-thread event queue when the bridge
+    // publishes at high frame rates (30fps × 8 cameras = 240 msg/s).
     InferenceResult result;
     if (decodeInferenceResult(payload, result)) {
-        qDebug() << "InferenceSubscriber: Decoded result for camera" << result.cameraId
-                 << "detections:" << result.detections.size();
-        emit inferenceFinished(result);
+        mLatestResults[result.cameraId] = result;
     } else {
         qWarning() << "InferenceSubscriber: Failed to decode message from" << topic;
+    }
+}
+
+void InferenceSubscriber::flushResults()
+{
+    if (mLatestResults.isEmpty()) return;
+
+    // Take all pending results (swap with empty to avoid holding stale data)
+    QMap<int, InferenceResult> pending;
+    pending.swap(mLatestResults);
+
+    for (auto it = pending.begin(); it != pending.end(); ++it) {
+        emit inferenceFinished(it.value());
     }
 }
 
@@ -215,6 +244,7 @@ bool InferenceSubscriber::decodeChannelDiscovery(const QByteArray& json, QVector
         info.chid            = obj["chid"].toInt();
         info.name            = obj["name"].toString(QString("camera_%1").arg(info.cameraId));
         info.previewUrl      = obj["preview_url"].toString();
+        info.snapshotUrl     = obj["snapshot_url"].toString();
         info.inferenceTopic  = obj["inference_topic"].toString();
         channels.append(info);
     }

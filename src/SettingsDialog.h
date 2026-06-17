@@ -7,6 +7,7 @@
 #include <QDoubleSpinBox>
 #include <QSpinBox>
 #include <QCheckBox>
+#include <QGroupBox>
 #include "Types.h"
 
 class ConfigManager;
@@ -24,6 +25,9 @@ struct CameraParamWidgets {
     QDoubleSpinBox* smoothingAlpha;
     QSpinBox*       trackMaxLost;
     QSpinBox*       inferenceIntervalMs;
+    // Group boxes for mode-dependent visibility
+    QGroupBox*      modelGroup     = nullptr;
+    QGroupBox*      detectionGroup = nullptr;
 };
 
 /// Settings dialog: shows all camera parameters in tabs, saves on confirm

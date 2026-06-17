@@ -4,6 +4,7 @@
 #include "BottomControlBar.h"
 #include "AlertPanel.h"
 #include "CameraCapture.h"
+#include "ImageStreamSource.h"
 #include "InferenceEngine.h"
 #include "SmoothingFilter.h"
 #include "ConfigManager.h"
@@ -173,7 +174,7 @@ void MainWindow::setupUI()
     qDebug() << "MainWindow::setupUI() - Window shown, isVisible:" << isVisible();
 }
 
-bool MainWindow::initialize(const QString& configPath)
+bool MainWindow::initialize(const QString& configPath, bool forceImageMode)
 {
     QString path = configPath.isEmpty() ? ConfigManager::resolveConfigPath() : configPath;
 
@@ -191,9 +192,10 @@ bool MainWindow::initialize(const QString& configPath)
         }
     }
 
-    // Determine system mode
-    mSystemMode = mConfigManager->systemMode();
-    qDebug() << "MainWindow: System mode:" << mSystemMode;
+    // Determine system mode (--image-mode flag overrides config)
+    mSystemMode = forceImageMode ? QStringLiteral("image_stream") : mConfigManager->systemMode();
+    qDebug() << "MainWindow: System mode:" << mSystemMode
+             << (forceImageMode ? "(forced by --image-mode)" : "");
 
     // Auto-start dependency services
     connect(mServiceLauncher, &ServiceLauncher::serviceError,
@@ -224,8 +226,8 @@ bool MainWindow::initialize(const QString& configPath)
         }
     }
 
-    // Initialize MQTT subscriber if in subscribe mode (async connection)
-    if (mSystemMode == "mqtt_subscribe") {
+    // Initialize MQTT subscriber for mqtt_subscribe and image_stream modes
+    if (mSystemMode == "mqtt_subscribe" || mSystemMode == "image_stream") {
         mInferenceSubscriber = new InferenceSubscriber(this);
         mInferenceSubscriber->setDiscoveryTopic(mConfigManager->discoveryTopic());
 
@@ -261,6 +263,13 @@ bool MainWindow::initialize(const QString& configPath)
         // In mqtt_subscribe mode, pipelines are created when channels are discovered
         if (mSystemMode == "mqtt_subscribe")
             continue;
+
+        // In image_stream mode, set up cameras that have a snapshot URL;
+        // others will be set up when channels are discovered via MQTT
+        if (mSystemMode == "image_stream") {
+            if (cfg.snapshotUrl.isEmpty())
+                continue;
+        }
 
         if (cfg.enabled) {
             setupCameraPipeline(cfg.cameraId, cfg);
@@ -360,6 +369,33 @@ bool MainWindow::setupCameraPipeline(int cameraId, const CameraConfig& config)
 
         return true;
     }
+    else if (cameraMode == "image_stream") {
+        // SmoothingFilter already created above (unconditionally)
+        // Create ImageStreamThread for periodic snapshot display (no RTSP decoding)
+        auto* imgStream = new ImageStreamThread(cameraId, this);
+        imgStream->setSnapshotInterval(config.snapshotIntervalMs);
+
+        connect(imgStream, &ImageStreamThread::displayFrameReady,
+                this, &MainWindow::onDisplayFrameReady);
+        connect(imgStream, &ImageStreamThread::fpsUpdated,
+                this, &MainWindow::onFpsUpdated);
+        connect(imgStream, &ImageStreamThread::error,
+                this, &MainWindow::onCameraError);
+
+        mImageStreamThreads[cameraId] = imgStream;
+        mCameraRunning[cameraId] = false;
+        mAlertPanel->setCameraRunning(cameraId, false);
+
+        if (cameraId < mVideoWidgets.size()) {
+            mVideoWidgets[cameraId]->setConfidenceThreshold(config.confidenceThreshold);
+        }
+
+        qDebug() << "MainWindow: Camera" << cameraId << "in image_stream mode"
+                 << "snapshotUrl:" << config.snapshotUrl
+                 << "interval:" << config.snapshotIntervalMs << "ms";
+
+        return true;
+    }
 
     qWarning() << "MainWindow: Unsupported camera mode:" << cameraMode;
     return false;
@@ -374,6 +410,12 @@ void MainWindow::teardownCameraPipeline(int cameraId)
         auto* camera = mCameraThreads[cameraId];
         mCameraThreads.remove(cameraId);
         delete camera;
+    }
+
+    if (mImageStreamThreads.contains(cameraId)) {
+        auto* imgStream = mImageStreamThreads[cameraId];
+        mImageStreamThreads.remove(cameraId);
+        delete imgStream;
     }
 
     if (mInferenceEngines.contains(cameraId)) {
@@ -401,6 +443,7 @@ void MainWindow::startAll()
     mStartTime = QDateTime::currentMSecsSinceEpoch();
     mSidebar->setRunning(true);
 
+    // Start CameraThreads
     for (auto it = mCameraThreads.begin(); it != mCameraThreads.end(); ++it) {
         int camId = it.key();
         QString source;
@@ -416,6 +459,32 @@ void MainWindow::startAll()
         }
 
         it.value()->requestStart(source);
+        mCameraRunning[camId] = true;
+        mAlertPanel->setCameraRunning(camId, true);
+        if (camId < mVideoWidgets.size()) {
+            mVideoWidgets[camId]->showNoSignal();
+        }
+    }
+
+    // Start ImageStreamThreads
+    for (auto it = mImageStreamThreads.begin(); it != mImageStreamThreads.end(); ++it) {
+        int camId = it.key();
+        QString url;
+
+        // Use snapshot URL from config or preview URL from discovered channels
+        if (mChannelInfos.contains(camId) && !mChannelInfos[camId].previewUrl.isEmpty()) {
+            url = mChannelInfos[camId].previewUrl;
+        }
+        // Override with explicit snapshot URL from config if set
+        auto configs = mConfigManager->allConfigs();
+        for (const auto& cfg : configs) {
+            if (cfg.cameraId == camId && !cfg.snapshotUrl.isEmpty()) {
+                url = cfg.snapshotUrl;
+                break;
+            }
+        }
+
+        it.value()->requestStart(url);
         mCameraRunning[camId] = true;
         mAlertPanel->setCameraRunning(camId, true);
         if (camId < mVideoWidgets.size()) {
@@ -440,6 +509,12 @@ void MainWindow::stopAll()
         mAlertPanel->setCameraRunning(it.key(), false);
     }
 
+    for (auto it = mImageStreamThreads.begin(); it != mImageStreamThreads.end(); ++it) {
+        it.value()->requestStop();
+        mCameraRunning[it.key()] = false;
+        mAlertPanel->setCameraRunning(it.key(), false);
+    }
+
     for (auto* widget : mVideoWidgets) {
         widget->showNoSignal();
     }
@@ -454,12 +529,18 @@ void MainWindow::stopAll()
 
 void MainWindow::toggleCamera(int cameraId)
 {
-    if (!mCameraThreads.contains(cameraId)) return;
+    bool isCameraThread = mCameraThreads.contains(cameraId);
+    bool isImageStream  = mImageStreamThreads.contains(cameraId);
+
+    if (!isCameraThread && !isImageStream) return;
 
     bool running = mCameraRunning.value(cameraId, false);
 
     if (running) {
-        mCameraThreads[cameraId]->requestStop();
+        if (isCameraThread)
+            mCameraThreads[cameraId]->requestStop();
+        else
+            mImageStreamThreads[cameraId]->requestStop();
         mCameraRunning[cameraId] = false;
         mAlertPanel->setCameraRunning(cameraId, false);
         if (cameraId < mVideoWidgets.size())
@@ -471,10 +552,16 @@ void MainWindow::toggleCamera(int cameraId)
         } else {
             auto configs = mConfigManager->allConfigs();
             for (const auto& cfg : configs) {
-                if (cfg.cameraId == cameraId) { source = cfg.source; break; }
+                if (cfg.cameraId == cameraId) {
+                    source = isImageStream ? cfg.snapshotUrl : cfg.source;
+                    break;
+                }
             }
         }
-        mCameraThreads[cameraId]->requestStart(source);
+        if (isCameraThread)
+            mCameraThreads[cameraId]->requestStart(source);
+        else
+            mImageStreamThreads[cameraId]->requestStart(source);
         mCameraRunning[cameraId] = true;
         mAlertPanel->setCameraRunning(cameraId, true);
     }
@@ -484,7 +571,7 @@ void MainWindow::openSettings()
 {
     SettingsDialog dlg(mConfigManager, this);
     connect(&dlg, &SettingsDialog::settingsSaved, this, [this]() {
-        if (mSystemMode == "mqtt_subscribe") {
+        if (mSystemMode == "mqtt_subscribe" || mSystemMode == "image_stream") {
             // Just update detection params in-place, no pipeline teardown needed
             auto configs = mConfigManager->allConfigs();
             for (const auto& cfg : configs) {
@@ -497,6 +584,11 @@ void MainWindow::openSettings()
                 }
                 if (mVideoWidgets.size() > cfg.cameraId)
                     mVideoWidgets[cfg.cameraId]->setConfidenceThreshold(cfg.confidenceThreshold);
+
+                // Update snapshot interval for image_stream cameras
+                if (mImageStreamThreads.contains(cfg.cameraId)) {
+                    mImageStreamThreads[cfg.cameraId]->setSnapshotInterval(cfg.snapshotIntervalMs);
+                }
 
                 mAlertPanel->updateDeviceStatus(cfg.cameraId, cfg.name,
                     mCameraRunning.value(cfg.cameraId, false), 0.0, 0);
@@ -681,7 +773,8 @@ void MainWindow::onChannelsDiscovered(const QVector<ChannelInfo>& channels)
     bool pipelinesCreated = false;
     for (const auto& ch : channels) {
         // Skip if pipeline already exists for this camera
-        if (mCameraThreads.contains(ch.cameraId))
+        if (mCameraThreads.contains(ch.cameraId) ||
+            mImageStreamThreads.contains(ch.cameraId))
             continue;
 
         mChannelInfos[ch.cameraId] = ch;
@@ -697,10 +790,19 @@ void MainWindow::onChannelsDiscovered(const QVector<ChannelInfo>& channels)
         CameraConfig cfg;
         cfg.cameraId = ch.cameraId;
         cfg.name = ch.name;
-        cfg.source = ch.previewUrl;
-        cfg.mode = "mqtt_subscribe";
         cfg.mqttTopic = ch.inferenceTopic;
         cfg.enabled = true;
+
+        if (mSystemMode == "image_stream") {
+            cfg.mode = "image_stream";
+            // Prefer dedicated snapshot URL, fall back to preview URL (RTSP → single-frame grab)
+            cfg.snapshotUrl = ch.snapshotUrl.isEmpty() ? ch.previewUrl : ch.snapshotUrl;
+            cfg.source = cfg.snapshotUrl;
+        } else {
+            cfg.mode = "mqtt_subscribe";
+            cfg.source = ch.previewUrl;
+        }
+
         setupCameraPipeline(ch.cameraId, cfg);
         pipelinesCreated = true;
 
@@ -711,17 +813,26 @@ void MainWindow::onChannelsDiscovered(const QVector<ChannelInfo>& channels)
         qDebug() << "MainWindow: Channel" << ch.cameraId
                  << "name:" << ch.name
                  << "preview:" << ch.previewUrl
+                 << "snapshot:" << ch.snapshotUrl
                  << "topic:" << ch.inferenceTopic;
     }
 
     // Auto-start new pipelines if system is already running
     if (pipelinesCreated && mRunning) {
         for (const auto& ch : channels) {
-            if (mCameraThreads.contains(ch.cameraId) && !mCameraRunning.value(ch.cameraId, false)) {
+            bool running = mCameraRunning.value(ch.cameraId, false);
+            if (running) continue;
+
+            if (mCameraThreads.contains(ch.cameraId)) {
                 mCameraThreads[ch.cameraId]->requestStart(ch.previewUrl);
-                mCameraRunning[ch.cameraId] = true;
-                mAlertPanel->setCameraRunning(ch.cameraId, true);
+            } else if (mImageStreamThreads.contains(ch.cameraId)) {
+                QString url = ch.snapshotUrl.isEmpty() ? ch.previewUrl : ch.snapshotUrl;
+                mImageStreamThreads[ch.cameraId]->requestStart(url);
+            } else {
+                continue;
             }
+            mCameraRunning[ch.cameraId] = true;
+            mAlertPanel->setCameraRunning(ch.cameraId, true);
         }
         updatePanels();
     }
@@ -836,7 +947,7 @@ void MainWindow::updatePanels()
             auto* w = mVideoWidgets[i];
             double fps = w->currentFps();
             int dets = w->detectionCount();
-            bool online = w->hasSignal() || mCameraThreads.contains(i);
+            bool online = w->hasSignal() || mCameraThreads.contains(i) || mImageStreamThreads.contains(i);
             mAlertPanel->updateDeviceStatus(i, name, online, fps, dets);
         }
     }

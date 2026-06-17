@@ -8,7 +8,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Find Qt5
-find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui)
+find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui Network)
 
 # Find OpenCV
 find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio dnn)
@@ -26,6 +26,7 @@ set(SOURCES
     src/BottomControlBar.cpp
     src/AlertPanel.cpp
     src/CameraCapture.cpp
+    src/ImageStreamSource.cpp
     src/InferenceEngine.cpp
     src/SmoothingFilter.cpp
     src/ConfigManager.cpp
@@ -46,6 +47,7 @@ set(HEADERS
     src/BottomControlBar.h
     src/AlertPanel.h
     src/CameraCapture.h
+    src/ImageStreamSource.h
     src/InferenceEngine.h
     src/SmoothingFilter.h
     src/ConfigManager.h
@@ -67,6 +69,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt5::Widgets
     Qt5::Core
     Qt5::Gui
+    Qt5::Network
     ${OpenCV_LIBS}
     PahoMqttCpp::paho-mqttpp3
 )

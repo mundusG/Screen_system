@@ -13,6 +13,7 @@
 
 class VideoWidget;
 class CameraThread;
+class ImageStreamThread;
 class InferenceEngine;
 class SmoothingFilter;
 class ConfigManager;
@@ -31,7 +32,7 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
 
-    bool initialize(const QString& configPath = QString());
+    bool initialize(const QString& configPath = QString(), bool forceImageMode = false);
 
 public slots:
     void startAll();
@@ -80,9 +81,10 @@ private:
     QVector<VideoWidget*> mVideoWidgets;
 
     // Pipeline components
-    QMap<int, CameraThread*>    mCameraThreads;
-    QMap<int, InferenceEngine*> mInferenceEngines;
-    QMap<int, SmoothingFilter*> mSmoothingFilters;
+    QMap<int, CameraThread*>      mCameraThreads;
+    QMap<int, ImageStreamThread*> mImageStreamThreads;
+    QMap<int, InferenceEngine*>   mInferenceEngines;
+    QMap<int, SmoothingFilter*>   mSmoothingFilters;
 
     ConfigManager* mConfigManager;
     InferenceSubscriber* mInferenceSubscriber;

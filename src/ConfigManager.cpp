@@ -403,6 +403,8 @@ CameraConfig ConfigManager::parseCameraJson(const QJsonObject& obj, int defaultI
     cfg.smoothingAlpha       = static_cast<float>(obj["smoothingAlpha"].toDouble(0.3));
     cfg.trackMaxLost         = obj["trackMaxLost"].toInt(5);
     cfg.inferenceIntervalMs  = obj["inferenceIntervalMs"].toInt(1000);
+    cfg.snapshotUrl          = obj["snapshot_url"].toString("");
+    cfg.snapshotIntervalMs   = obj["snapshot_interval_ms"].toInt(1000);
 
     // Parse class colors
     QJsonObject colors = obj["classColors"].toObject();
@@ -426,6 +428,8 @@ QJsonObject ConfigManager::cameraToJson(const CameraConfig& cfg) const
     obj["modelPath"]            = cfg.modelPath;
     obj["name"]                 = cfg.name;
     obj["enabled"]              = cfg.enabled;
+    obj["mode"]                 = cfg.mode;
+    obj["mqtt_topic"]           = cfg.mqttTopic;
     obj["confidenceThreshold"]  = static_cast<double>(cfg.confidenceThreshold);
     obj["nmsThreshold"]         = static_cast<double>(cfg.nmsThreshold);
     obj["inputWidth"]           = cfg.inputWidth;
@@ -433,6 +437,8 @@ QJsonObject ConfigManager::cameraToJson(const CameraConfig& cfg) const
     obj["smoothingAlpha"]       = static_cast<double>(cfg.smoothingAlpha);
     obj["trackMaxLost"]         = cfg.trackMaxLost;
     obj["inferenceIntervalMs"]  = cfg.inferenceIntervalMs;
+    obj["snapshot_url"]         = cfg.snapshotUrl;
+    obj["snapshot_interval_ms"] = cfg.snapshotIntervalMs;
 
     QJsonObject colors;
     for (auto it = cfg.classColors.begin(); it != cfg.classColors.end(); ++it) {

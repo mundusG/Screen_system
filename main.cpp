@@ -83,11 +83,22 @@ int main(int argc, char* argv[])
         "number", "8");
     parser.addOption(cameraCountOption);
 
+    QCommandLineOption imageModeOption(
+        QStringList() << "i" << "image-mode",
+        QString::fromUtf8("图片流模式 — 用定时抓图替代连续RTSP视频解码，降低8路视频负载"));
+    parser.addOption(imageModeOption);
+
     parser.process(app);
 
     // Set OpenCV threading to avoid conflicts with Qt threads
     // (OpenCV may try to use TBB or OpenMP internally)
     cv::setNumThreads(2);  // limit OpenCV internal threads per inference worker
+
+    // Set FFmpeg options globally ONCE before any threads start.
+    // setenv() is NOT thread-safe — calling it from 8 worker threads
+    // simultaneously corrupts the environment and causes crashes.
+    qputenv("OPENCV_FFMPEG_CAPTURE_OPTIONS",
+            "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|timeout;5000000");
 
     // Create and initialize main window
     MainWindow mainWindow;
@@ -100,8 +111,9 @@ int main(int argc, char* argv[])
         configPath = ConfigManager::resolveConfigPath();
     }
 
-    // Initialize system
-    if (!mainWindow.initialize(configPath)) {
+    // Initialize system (--image-mode forces image_stream system mode)
+    bool forceImageMode = parser.isSet(imageModeOption);
+    if (!mainWindow.initialize(configPath, forceImageMode)) {
         QMessageBox::warning(
             nullptr,
             "Initialization Warning",

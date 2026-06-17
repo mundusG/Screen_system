@@ -97,9 +97,9 @@ QWidget* SettingsDialog::buildCameraTab(int index, const CameraConfig& cfg)
     srcForm->addRow(QString::fromUtf8("启用:"),   w.enabled);
     vlay->addWidget(srcGroup);
 
-    // --- Model group ---
-    auto* mdlGroup = new QGroupBox(QString::fromUtf8("模型"));
-    auto* mdlForm  = new QFormLayout(mdlGroup);
+    // --- Model group (only applies to local_inference) ---
+    w.modelGroup = new QGroupBox(QString::fromUtf8("模型"));
+    auto* mdlForm  = new QFormLayout(w.modelGroup);
     mdlForm->setLabelAlignment(Qt::AlignRight);
 
     w.modelPath   = new QLineEdit(cfg.modelPath);
@@ -110,21 +110,32 @@ QWidget* SettingsDialog::buildCameraTab(int index, const CameraConfig& cfg)
     mdlForm->addRow(QString::fromUtf8("模型路径:"),    w.modelPath);
     mdlForm->addRow(QString::fromUtf8("输入宽度:"),    w.inputWidth);
     mdlForm->addRow(QString::fromUtf8("输入高度:"),    w.inputHeight);
-    vlay->addWidget(mdlGroup);
+    vlay->addWidget(w.modelGroup);
 
     // --- Detection group ---
-    auto* detGroup = new QGroupBox(QString::fromUtf8("检测参数"));
-    auto* detForm  = new QFormLayout(detGroup);
+    QString sysMode = mConfigManager->systemMode();
+    bool isLocalMode = (sysMode == "local_inference");
+
+    w.detectionGroup = new QGroupBox(QString::fromUtf8("检测参数"));
+    auto* detForm  = new QFormLayout(w.detectionGroup);
     detForm->setLabelAlignment(Qt::AlignRight);
 
     w.confidenceThreshold = new QDoubleSpinBox(); w.confidenceThreshold->setRange(0.01, 1.0); w.confidenceThreshold->setSingleStep(0.05); w.confidenceThreshold->setDecimals(2); w.confidenceThreshold->setValue(cfg.confidenceThreshold);
-    w.nmsThreshold        = new QDoubleSpinBox(); w.nmsThreshold->setRange(0.01, 1.0);        w.nmsThreshold->setSingleStep(0.05);        w.nmsThreshold->setDecimals(2);        w.nmsThreshold->setValue(cfg.nmsThreshold);
-    w.inferenceIntervalMs = new QSpinBox();       w.inferenceIntervalMs->setRange(33, 10000); w.inferenceIntervalMs->setSuffix(" ms");    w.inferenceIntervalMs->setValue(cfg.inferenceIntervalMs);
+    detForm->addRow(QString::fromUtf8("置信度阈值:"), w.confidenceThreshold);
 
-    detForm->addRow(QString::fromUtf8("置信度阈值:"),     w.confidenceThreshold);
-    detForm->addRow(QString::fromUtf8("NMS 阈值:"),       w.nmsThreshold);
-    detForm->addRow(QString::fromUtf8("推理间隔:"),       w.inferenceIntervalMs);
-    vlay->addWidget(detGroup);
+    w.nmsThreshold = new QDoubleSpinBox(); w.nmsThreshold->setRange(0.01, 1.0); w.nmsThreshold->setSingleStep(0.05); w.nmsThreshold->setDecimals(2); w.nmsThreshold->setValue(cfg.nmsThreshold);
+    if (isLocalMode)
+        detForm->addRow(QString::fromUtf8("NMS 阈值:"), w.nmsThreshold);
+
+    w.inferenceIntervalMs = new QSpinBox(); w.inferenceIntervalMs->setRange(33, 10000); w.inferenceIntervalMs->setSuffix(" ms"); w.inferenceIntervalMs->setValue(cfg.inferenceIntervalMs);
+    if (isLocalMode)
+        detForm->addRow(QString::fromUtf8("推理间隔:"), w.inferenceIntervalMs);
+
+    vlay->addWidget(w.detectionGroup);
+
+    // Model group only applies to local_inference mode
+    if (!isLocalMode)
+        w.modelGroup->hide();
 
     // --- Tracking group ---
     auto* trkGroup = new QGroupBox(QString::fromUtf8("平滑 & 追踪"));

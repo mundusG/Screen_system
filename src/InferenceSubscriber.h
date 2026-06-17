@@ -3,11 +3,18 @@
 
 #include <QObject>
 #include <QVector>
+#include <QMap>
+#include <QTimer>
 #include "Types.h"
 #include "MQTTClient.h"
 
 /// Subscribes to MQTT topics and decodes inference results from JSON
-/// Used by display device to receive detections from remote inference engines
+/// Used by display device to receive detections from remote inference engines.
+///
+/// Rate-limiting: incoming MQTT messages are decoded and stored per camera,
+/// then emitted in batches on a fixed-interval timer (default 200ms).
+/// This prevents the main-thread event queue from being flooded when the
+/// bridge publishes at high frame rates, which causes burst/silence display.
 class InferenceSubscriber : public QObject
 {
     Q_OBJECT
@@ -35,6 +42,9 @@ public:
     /// Check if connected
     bool isConnected() const;
 
+    /// Set throttle interval for batching inference results (0 = no throttle)
+    void setThrottleInterval(int ms);
+
 signals:
     /// Emitted when inference result is received and decoded
     void inferenceFinished(const InferenceResult& result);
@@ -50,6 +60,7 @@ private slots:
     void onMqttConnected();
     void onMqttDisconnected();
     void onMqttError(const QString& message);
+    void flushResults();
 
 private:
     /// Decode JSON payload to InferenceResult
@@ -61,6 +72,11 @@ private:
     MQTTClient* mMqttClient;
     QStringList mSubscribedTopics;
     QString mDiscoveryTopic;
+
+    // Rate-limiting: store latest result per camera, emit in batches
+    QTimer* mThrottleTimer;
+    int mThrottleIntervalMs = 200;
+    QMap<int, InferenceResult> mLatestResults;
 };
 
 #endif // INFERENCESUBSCRIBER_H

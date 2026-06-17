@@ -81,6 +81,10 @@ struct CameraConfig {
     // Inference rate
     int     inferenceIntervalMs = 1000;  // ms between inference frames
 
+    // Image stream mode
+    QString snapshotUrl;                       // HTTP/RTSP/file URL for periodic snapshot
+    int     snapshotIntervalMs = 1000;         // ms between snapshot fetches
+
     // Color mapping: classId -> QColor name
     QMap<int, QString> classColors;
 
@@ -127,6 +131,7 @@ struct ChannelInfo {
     int     chid            = 0;
     QString name;
     QString previewUrl;         // rtsp://host:port/preview/chid
+    QString snapshotUrl;        // http://host:port/snapshot/chid (for image_stream mode)
     QString inferenceTopic;     // inference/camera/{id}/detections
 };
 

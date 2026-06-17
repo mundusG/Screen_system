@@ -1,6 +1,7 @@
 #include "MQTTClient.h"
 #include <QDebug>
 #include <QMutexLocker>
+#include <QThread>
 
 MQTTClient::MQTTClient(QObject* parent)
     : QObject(parent)
@@ -12,9 +13,7 @@ MQTTClient::MQTTClient(QObject* parent)
 
 MQTTClient::~MQTTClient()
 {
-    disconnect();
-    delete mClient;
-    delete mCallback;
+    disconnect();  // cleans up mClient / mCallback
 }
 
 bool MQTTClient::connectToBroker(const QString& brokerUrl,
@@ -71,26 +70,35 @@ bool MQTTClient::connectToBroker(const QString& brokerUrl,
 
 void MQTTClient::disconnect()
 {
-    QMutexLocker locker(&mMutex);
+    // Fire disconnect without holding the mutex during the wait,
+    // so Paho callbacks (connection_lost) can acquire mMutex.
+    {
+        QMutexLocker locker(&mMutex);
+        if (!mClient) return;
 
-    if (!mClient) return;
-
-    try {
-        if (mClient->is_connected()) {
-            qDebug() << "MQTTClient: Disconnecting...";
-            auto tok = mClient->disconnect();
-            tok->wait_for(std::chrono::seconds(5));
+        try {
+            if (mClient->is_connected()) {
+                qDebug() << "MQTTClient: Disconnecting...";
+                mClient->disconnect()->wait_for(std::chrono::milliseconds(500));
+            }
+            mConnected = false;
         }
-        mConnected = false;
-    }
-    catch (const mqtt::exception& e) {
-        qWarning() << "MQTTClient: Disconnect error:" << e.what();
+        catch (const mqtt::exception& e) {
+            qWarning() << "MQTTClient: Disconnect error:" << e.what();
+        }
     }
 
-    delete mClient;
-    delete mCallback;
-    mClient = nullptr;
-    mCallback = nullptr;
+    // Paho callbacks may still fire after disconnect() returns;
+    // brief sleep lets pending callbacks drain before we delete.
+    QThread::msleep(100);
+
+    {
+        QMutexLocker locker(&mMutex);
+        delete mClient;
+        delete mCallback;
+        mClient = nullptr;
+        mCallback = nullptr;
+    }
 
     emit disconnected();
 }
@@ -138,9 +146,13 @@ bool MQTTClient::subscribe(const QString& topic, int qos)
 
     try {
         qDebug() << "MQTTClient: Subscribing to" << topic;
-        auto tok = mClient->subscribe(topic.toStdString(), qos);
-        tok->wait();
-        qDebug() << "MQTTClient: Subscribed to" << topic;
+        // Fire-and-forget — async_client handles this in background.
+        // NEVER tok->wait() here: we hold mMutex, and the Paho
+        // callback thread needs mMutex to deliver connection_lost(),
+        // causing a classic deadlock (main thread waits for subscribe,
+        // Paho thread waits for mutex).
+        mClient->subscribe(topic.toStdString(), qos);
+        qDebug() << "MQTTClient: Subscribe initiated for" << topic;
         return true;
     }
     catch (const mqtt::exception& e) {
@@ -159,8 +171,7 @@ bool MQTTClient::unsubscribe(const QString& topic)
     }
 
     try {
-        auto tok = mClient->unsubscribe(topic.toStdString());
-        tok->wait();
+        mClient->unsubscribe(topic.toStdString());
         return true;
     }
     catch (const mqtt::exception& e) {
