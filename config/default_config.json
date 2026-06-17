@@ -13,7 +13,8 @@
         "broker": "tcp://192.168.77.145:1883",
         "client_id": "display_device",
         "username": "",
-        "password": ""
+        "password": "",
+        "discovery_topic": "inference/bridge/+/channels"
     },
     "services": {
         "nn_bridge": {
@@ -110,7 +111,7 @@
             "name": "摄像头 5",
             "source": "4",
             "modelPath": "camera_4.onnx",
-            "enabled": false,
+            "enabled": true,
             "mode": "mqtt_subscribe",
             "mqtt_topic": "inference/camera/4/detections",
             "confidenceThreshold": 0.5,
@@ -130,7 +131,7 @@
             "name": "摄像头 6",
             "source": "5",
             "modelPath": "camera_5.onnx",
-            "enabled": false,
+            "enabled": true,
             "mode": "mqtt_subscribe",
             "mqtt_topic": "inference/camera/5/detections",
             "confidenceThreshold": 0.5,
@@ -150,7 +151,7 @@
             "name": "摄像头 7",
             "source": "6",
             "modelPath": "camera_6.onnx",
-            "enabled": false,
+            "enabled": true,
             "mode": "mqtt_subscribe",
             "mqtt_topic": "inference/camera/6/detections",
             "confidenceThreshold": 0.5,
@@ -170,7 +171,7 @@
             "name": "摄像头 8",
             "source": "7",
             "modelPath": "camera_7.onnx",
-            "enabled": false,
+            "enabled": true,
             "mode": "mqtt_subscribe",
             "mqtt_topic": "inference/camera/7/detections",
             "confidenceThreshold": 0.5,

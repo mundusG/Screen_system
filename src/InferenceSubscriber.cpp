@@ -4,6 +4,18 @@
 #include <QJsonObject>
 #include <QJsonArray>
 
+static bool matchesMqttPattern(const QString& pattern, const QString& topic)
+{
+    QStringList pat = pattern.split('/');
+    QStringList top = topic.split('/');
+    if (pat.size() != top.size()) return false;
+    for (int i = 0; i < pat.size(); ++i) {
+        if (pat[i] == QLatin1String("+")) continue;
+        if (pat[i] != top[i]) return false;
+    }
+    return true;
+}
+
 InferenceSubscriber::InferenceSubscriber(QObject* parent)
     : QObject(parent)
 {
@@ -79,7 +91,7 @@ bool InferenceSubscriber::isConnected() const
 void InferenceSubscriber::onMessageReceived(const QString& topic, const QByteArray& payload)
 {
     // Channel discovery message
-    if (!mDiscoveryTopic.isEmpty() && topic == mDiscoveryTopic) {
+    if (!mDiscoveryTopic.isEmpty() && matchesMqttPattern(mDiscoveryTopic, topic)) {
         QVector<ChannelInfo> channels;
         if (decodeChannelDiscovery(payload, channels)) {
             qDebug() << "InferenceSubscriber: Discovered" << channels.size() << "channel(s)";

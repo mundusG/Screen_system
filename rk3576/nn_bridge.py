@@ -89,22 +89,30 @@ class NNBridge:
         preview_cfg = self.config.get('preview', {})
         self.preview_host = preview_cfg.get('host', '127.0.0.1')
         self.preview_port = preview_cfg.get('port', 5544)
-        self.discovery_topic = self.config.get('discovery_topic', 'inference/bridge/channels')
+
+        # Per-bridge discovery topic: inference/bridge/{client_id}/channels
+        client_id = self.config.get('client_id', 'nn_bridge')
+        base_topic = self.config.get('discovery_topic', 'inference/bridge')
+        self.discovery_topic = f'{base_topic}/{client_id}/channels'
+
+        # chid → display slot mapping (optional, falls back to chid - 1)
+        self.channel_map = self.config.get('channel_map', {})
 
         # Auto-discovered channels: chid -> channel state
         self.active_channels = {}
         self.discovery_changed = True
 
     def _register_channel(self, chid):
+        camera_id = self.channel_map.get(str(chid), chid - 1)
         self.active_channels[chid] = {
-            'camera_id': chid,
-            'publish_topic': f'inference/camera/{chid}/detections',
+            'camera_id': camera_id,
+            'publish_topic': f'inference/camera/{camera_id}/detections',
             'frame_count': 0,
             'last_seen': time.time(),
             'stats': ChannelStats(),
         }
         self.discovery_changed = True
-        logger.info("Auto-discovered channel chid={}", chid)
+        logger.info("Auto-discovered channel chid={} -> camera_id={}", chid, camera_id)
 
     def _check_channel_timeout(self):
         now = time.time()
@@ -154,8 +162,9 @@ class NNBridge:
         self.local_client.loop_start()
         self.remote_client.loop_start()
 
-        logger.info("NN Bridge started (auto-discovery), geid={}, topic={}, stats every {}s",
-                     self.geid, self.subscribe_topic, self.stats_interval)
+        logger.info("NN Bridge started, geid={}, topic={}, discovery={}, channel_map={}",
+                     self.geid, self.subscribe_topic, self.discovery_topic,
+                     self.channel_map if self.channel_map else "auto(chid-1)")
 
         try:
             while self.running:

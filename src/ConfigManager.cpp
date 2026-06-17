@@ -65,7 +65,7 @@ bool ConfigManager::loadFromFile(const QString& filePath)
     mCheckMosquitto = servicesObj["check_mosquitto"].toBool(true);
 
     // Read discovery topic
-    mDiscoveryTopic = mqttObj["discovery_topic"].toString("inference/bridge/channels");
+    mDiscoveryTopic = mqttObj["discovery_topic"].toString("inference/bridge/+/channels");
 
     for (int i = 0; i < cameras.size(); ++i) {
         QJsonObject camObj = cameras[i].toObject();
