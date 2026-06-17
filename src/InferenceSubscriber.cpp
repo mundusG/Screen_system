@@ -1,5 +1,6 @@
 #include "InferenceSubscriber.h"
 #include <QDebug>
+#include <QDateTime>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
@@ -144,6 +145,16 @@ void InferenceSubscriber::flushResults()
 
 void InferenceSubscriber::onMqttConnected()
 {
+    // Cooldown: if we just connected recently (within 5s), this is a
+    // rapid reconnect/disconnect cycle.  Skip re-subscription to avoid
+    // flooding the main-thread event queue and Paho's internal state.
+    qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (mLastConnectTime != 0 && (now - mLastConnectTime) < 5000) {
+        qDebug() << "InferenceSubscriber: MQTT connected (cooldown, skipping re-subscribe)";
+        return;
+    }
+    mLastConnectTime = now;
+
     qDebug() << "InferenceSubscriber: MQTT connected";
 
     // Subscribe to all topics now that connection is established
@@ -249,4 +260,84 @@ bool InferenceSubscriber::decodeChannelDiscovery(const QByteArray& json, QVector
         channels.append(info);
     }
     return true;
+}
+
+// ============================================================
+// InferenceSubscriberThread implementation
+// ============================================================
+
+InferenceSubscriberThread::InferenceSubscriberThread(QObject* parent)
+    : QObject(parent)
+{
+    mThread = new QThread(this);
+    mSubscriber = new InferenceSubscriber();  // no parent — will be moved to thread
+
+    mSubscriber->moveToThread(mThread);
+
+    // Wire signals through thread boundary
+    connect(mSubscriber, &InferenceSubscriber::inferenceFinished,
+            this, &InferenceSubscriberThread::inferenceFinished,
+            Qt::QueuedConnection);
+    connect(mSubscriber, &InferenceSubscriber::channelsDiscovered,
+            this, &InferenceSubscriberThread::channelsDiscovered,
+            Qt::QueuedConnection);
+    connect(mSubscriber, &InferenceSubscriber::error,
+            this, &InferenceSubscriberThread::error,
+            Qt::QueuedConnection);
+
+    mThread->setObjectName(QStringLiteral("InferenceSubscriberThread"));
+    mThread->start();
+}
+
+InferenceSubscriberThread::~InferenceSubscriberThread()
+{
+    mThread->quit();
+    mThread->wait(3000);
+    if (mThread->isRunning()) {
+        mThread->terminate();
+        mThread->wait();
+    }
+    delete mSubscriber;
+}
+
+void InferenceSubscriberThread::setDiscoveryTopic(const QString& topic)
+{
+    QMetaObject::invokeMethod(mSubscriber, [this, topic]() {
+        mSubscriber->setDiscoveryTopic(topic);
+    }, Qt::QueuedConnection);
+}
+
+void InferenceSubscriberThread::connectAndSubscribe(const QString& brokerUrl,
+                                                     const QString& clientId,
+                                                     const QStringList& topics,
+                                                     const QString& username,
+                                                     const QString& password)
+{
+    QMetaObject::invokeMethod(mSubscriber, [this, brokerUrl, clientId, topics, username, password]() {
+        mSubscriber->connectAndSubscribe(brokerUrl, clientId, topics, username, password);
+    }, Qt::QueuedConnection);
+}
+
+void InferenceSubscriberThread::subscribeTopic(const QString& topic)
+{
+    QMetaObject::invokeMethod(mSubscriber, [this, topic]() {
+        mSubscriber->subscribeTopic(topic);
+    }, Qt::QueuedConnection);
+}
+
+void InferenceSubscriberThread::disconnect()
+{
+    QMetaObject::invokeMethod(mSubscriber, "disconnect", Qt::QueuedConnection);
+}
+
+bool InferenceSubscriberThread::isConnected() const
+{
+    return mSubscriber->isConnected();
+}
+
+void InferenceSubscriberThread::setThrottleInterval(int ms)
+{
+    QMetaObject::invokeMethod(mSubscriber, [this, ms]() {
+        mSubscriber->setThrottleInterval(ms);
+    }, Qt::QueuedConnection);
 }

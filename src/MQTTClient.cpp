@@ -37,7 +37,7 @@ bool MQTTClient::connectToBroker(const QString& brokerUrl,
         mClient->set_callback(*mCallback);
 
         mqtt::connect_options connOpts;
-        connOpts.set_keep_alive_interval(20);
+        connOpts.set_keep_alive_interval(60);
         connOpts.set_clean_session(true);
         connOpts.set_automatic_reconnect(true);
 

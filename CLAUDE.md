@@ -493,6 +493,9 @@ sudo apt install -y build-essential cmake g++ \
     libpaho-mqttpp-dev libpaho-mqtt-dev \
     fonts-wqy-microhei mosquitto-clients
 
+apt install -y ffmpeg
+
+
 # 同步编译
 cd ~/screen_system && ./sync.sh
 # 或手动:
@@ -619,3 +622,20 @@ rk3576-A (192.168.77.145)          rk3576-B (192.168.77.146)
 ```
 
 注意：当前 discovery 机制每台 bridge 发布自己的 channels（retained），展示端会收到最后一条。如需合并多台，后续可改为分 topic 发布：`inference/bridge/A/channels`。
+
+
+cd /mnt/d/\!code/screen_system && \
+  tar -czf - \
+      --exclude=build \
+      --exclude=.git \
+      --exclude=.vscode \
+      --exclude=.claude \
+      --exclude=rk3576 \
+      --exclude='*.md' \
+      --exclude='*.jsonl' \
+      --exclude='*.pyc' \
+      --exclude=__pycache__ \
+      --exclude=.DS_Store \
+      --exclude=.gitignore \
+      . | \
+  ssh -p 61837 root@42.193.140.103 "mkdir -p /models/screen_system && cd /models/screen_system && tar -xzf -"

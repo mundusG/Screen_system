@@ -10,7 +10,7 @@
 #include <QImage>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
-#include <opencv2/videoio.hpp>
+#include <QProcess>
 
 // ============================================================
 // ImageStreamSource implementation
@@ -75,9 +75,6 @@ void ImageStreamSource::stopStream()
     mRunning.storeRelaxed(0);
     if (mFetchTimer) {
         mFetchTimer->stop();
-    }
-    if (mRtspCapture.isOpened()) {
-        mRtspCapture.release();
     }
     qDebug() << "ImageStreamSource[" << mCameraId << "]: Stopped";
 }
@@ -191,79 +188,77 @@ void ImageStreamSource::onHttpReplyFinished(QNetworkReply* reply)
     emitFrame(bgr.clone());
 }
 
-// ── RTSP: persistent connection, read 1 frame per tick ───────
-// Keeps the cv::VideoCapture open across ticks — no per-tick TCP
-// connect / RTSP handshake / TEARDOWN. This eliminates ephemeral
-// port TIME_WAIT exhaustion and server-side connection floods.
-//
-// OPENCV_FFMPEG_CAPTURE_OPTIONS is set globally in main.cpp before
-// any threads start (timeout=5000000 prevents indefinite block).
-// Reading at 1 fps keeps H.264 decoder load trivial, avoiding the
-// persistent-connection state corruption that plagued 30 fps mode.
+// ── RTSP: one-shot ffmpeg subprocess per frame ──────────────
+// Each frame grab spawns a fresh ffmpeg process: connect, grab
+// one MJPEG frame, exit. Complete process isolation — even if
+// ffmpeg or the RTSP server misbehaves, the main app is safe.
 
 void ImageStreamSource::fetchViaRtsp()
 {
-    // Back off after 2 consecutive failures: retry only every 5th tick.
-    // Uses its own counter (not mFrameCount) because mFrameCount only
-    // increments on SUCCESS — would never skip during a failure streak.
-    if (mRtspConsecutiveFailures > 2) {
+    if (mRtspFailCount > 3) {
         mRtspBackoffCounter++;
         if (mRtspBackoffCounter % 5 != 0) return;
     } else {
         mRtspBackoffCounter = 0;
     }
 
-    // (Re)open if needed
-    if (!mRtspCapture.isOpened()) {
-        QString url;
-        {
-            QMutexLocker locker(&mMutex);
-            url = mSnapshotUrl;
-        }
-        if (url.isEmpty()) return;
-
-        bool ok = false;
-        try {
-            ok = mRtspCapture.open(url.toStdString(), cv::CAP_FFMPEG);
-        } catch (...) {}
-
-        if (!ok || !mRtspCapture.isOpened()) {
-            mRtspConsecutiveFailures++;
-            mRtspCapture.release();
-            return;
-        }
-        mRtspConsecutiveFailures = 0;
+    QString url;
+    {
+        QMutexLocker locker(&mMutex);
+        url = mSnapshotUrl;
     }
+    if (url.isEmpty()) return;
 
-    // Drain the internal FFmpeg decode buffer to get the FRESHEST frame.
-    // Between our 1fps reads the 30fps stream accumulates ~29 decoded
-    // frames.  A plain "cap >> frame" returns the oldest buffered frame
-    // (up to 1s stale).  grab() is non-blocking — it only dequeues
-    // already-decoded frames.  We drain everything, then retrieve() the
-    // last one (≤33ms old).
-    bool gotFrame = false;
-    int drained = 0;
-    while (drained < 60 && mRtspCapture.grab()) {  // 60 = 2s worth at 30fps
-        gotFrame = true;
-        drained++;
-    }
+    // Use ffmpeg to grab one MJPEG frame from RTSP.
+    // -map 0:v:0  explicitly selects first video stream
+    // -an         disable audio (prevent stream mapping issues)
+    // -f mjpeg    single MJPEG frame to stdout
+    QProcess proc;
+    proc.start(QStringLiteral("ffmpeg"), QStringList()
+        << QStringLiteral("-loglevel") << QStringLiteral("error")
+        << QStringLiteral("-rtsp_transport") << QStringLiteral("tcp")
+        << QStringLiteral("-i") << url
+        << QStringLiteral("-map") << QStringLiteral("0:v:0")
+        << QStringLiteral("-an")
+        << QStringLiteral("-vframes") << QStringLiteral("1")
+        << QStringLiteral("-c:v") << QStringLiteral("mjpeg")
+        << QStringLiteral("-f") << QStringLiteral("mjpeg")
+        << QStringLiteral("-"));
 
-    cv::Mat frame;
-    if (gotFrame) {
-        try {
-            mRtspCapture.retrieve(frame);
-        } catch (...) {}
-    }
-
-    if (frame.empty()) {
-        mRtspConsecutiveFailures++;
-        if (mRtspConsecutiveFailures > 3) {
-            mRtspCapture.release();  // reconnect next tick
-        }
+    // Cap wait: if ffmpeg reliably fails, backoff already limits retries.
+    // A valid RTSP grab typically completes in 2-4s (TCP connect + handshake).
+    int timeout = qMin(qMax(5000, mSnapshotIntervalMs * 2), 8000);
+    if (!proc.waitForFinished(timeout)) {
+        proc.kill();
+        proc.waitForFinished(1000);
+        mRtspFailCount++;
+        qWarning() << "ImageStreamSource[" << mCameraId << "]: ffmpeg timeout";
         return;
     }
 
-    mRtspConsecutiveFailures = 0;
+    if (proc.exitCode() != 0) {
+        QByteArray err = proc.readAllStandardError();
+        if (!err.isEmpty())
+            qWarning() << "ImageStreamSource[" << mCameraId << "]: ffmpeg error:" << err;
+        mRtspFailCount++;
+        return;
+    }
+
+    QByteArray data = proc.readAllStandardOutput();
+    if (data.isEmpty()) {
+        mRtspFailCount++;
+        return;
+    }
+
+    cv::Mat raw(1, data.size(), CV_8UC1, const_cast<char*>(data.constData()));
+    cv::Mat frame = cv::imdecode(raw, cv::IMREAD_COLOR);
+    if (frame.empty()) {
+        qWarning() << "ImageStreamSource[" << mCameraId << "]: Failed to decode MJPEG";
+        mRtspFailCount++;
+        return;
+    }
+
+    mRtspFailCount = 0;
     emitFrame(frame);
 }
 

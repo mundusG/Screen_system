@@ -7,14 +7,13 @@
 #include <QAtomicInt>
 #include <QMutex>
 #include <opencv2/core.hpp>
-#include <opencv2/videoio.hpp>
 
 class QNetworkAccessManager;
 class QNetworkReply;
 struct FrameData;
 
 /// Worker object that periodically fetches a single image frame from a URL.
-/// Supports HTTP(S) snapshot URLs, RTSP streams (persistent single-frame grab),
+/// Supports HTTP(S) snapshot URLs, RTSP streams (one-shot ffmpeg subprocess),
 /// and local file paths. Lives in its own QThread.
 class ImageStreamSource : public QObject
 {
@@ -61,12 +60,10 @@ private:
     QNetworkAccessManager* mNetworkManager = nullptr;
     bool mHttpPending = false;
 
-    // RTSP mode — persistent connection, read 1 frame per tick.
-    // Avoids per-tick TCP connect/RTSP-handshake/TEARDOWN that exhausts
-    // ephemeral ports (TIME_WAIT) and overwhelms the RTSP server.
-    cv::VideoCapture mRtspCapture;
-    int mRtspConsecutiveFailures = 0;
-    int mRtspBackoffCounter = 0;   // counts ticks for backoff (resets on success)
+    // RTSP mode — one-shot ffmpeg subprocess per frame.
+    // Each frame spawns a fresh ffmpeg process for complete crash isolation.
+    int mRtspFailCount = 0;
+    int mRtspBackoffCounter = 0;   // ticks since entering backoff, resets on success
 
     // Guard against re-entrant fetchOne() when >>frame blocks past interval
     bool mFetchInProgress = false;

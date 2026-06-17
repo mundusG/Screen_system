@@ -228,14 +228,14 @@ bool MainWindow::initialize(const QString& configPath, bool forceImageMode)
 
     // Initialize MQTT subscriber for mqtt_subscribe and image_stream modes
     if (mSystemMode == "mqtt_subscribe" || mSystemMode == "image_stream") {
-        mInferenceSubscriber = new InferenceSubscriber(this);
+        mInferenceSubscriber = new InferenceSubscriberThread(this);
         mInferenceSubscriber->setDiscoveryTopic(mConfigManager->discoveryTopic());
 
-        connect(mInferenceSubscriber, &InferenceSubscriber::inferenceFinished,
+        connect(mInferenceSubscriber, &InferenceSubscriberThread::inferenceFinished,
                 this, &MainWindow::onInferenceFinished);
-        connect(mInferenceSubscriber, &InferenceSubscriber::channelsDiscovered,
+        connect(mInferenceSubscriber, &InferenceSubscriberThread::channelsDiscovered,
                 this, &MainWindow::onChannelsDiscovered);
-        connect(mInferenceSubscriber, &InferenceSubscriber::error,
+        connect(mInferenceSubscriber, &InferenceSubscriberThread::error,
                 this, &MainWindow::onCameraError);
 
         // Connect to MQTT broker; discovery topic is auto-subscribed,

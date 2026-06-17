@@ -21,7 +21,7 @@ class SettingsDialog;
 class SidebarWidget;
 class BottomControlBar;
 class AlertPanel;
-class InferenceSubscriber;
+class InferenceSubscriberThread;
 class ServiceLauncher;
 
 class MainWindow : public QMainWindow
@@ -87,7 +87,7 @@ private:
     QMap<int, SmoothingFilter*>   mSmoothingFilters;
 
     ConfigManager* mConfigManager;
-    InferenceSubscriber* mInferenceSubscriber;
+    InferenceSubscriberThread* mInferenceSubscriber;
     ServiceLauncher* mServiceLauncher;
 
     bool    mRunning;

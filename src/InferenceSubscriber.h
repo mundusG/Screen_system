@@ -2,6 +2,7 @@
 #define INFERENCESUBSCRIBER_H
 
 #include <QObject>
+#include <QThread>
 #include <QVector>
 #include <QMap>
 #include <QTimer>
@@ -77,6 +78,41 @@ private:
     QTimer* mThrottleTimer;
     int mThrottleIntervalMs = 200;
     QMap<int, InferenceResult> mLatestResults;
+
+    // Prevent rapid connect/disconnect cycling from flooding the event loop
+    qint64 mLastConnectTime = 0;
+};
+
+/// Thread wrapper for InferenceSubscriber (same pattern as ImageStreamThread).
+/// Isolates all MQTT I/O and Paho callbacks in a dedicated thread so rapid
+/// reconnect cycles never block the main UI event loop.
+class InferenceSubscriberThread : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit InferenceSubscriberThread(QObject* parent = nullptr);
+    ~InferenceSubscriberThread() override;
+
+    void setDiscoveryTopic(const QString& topic);
+    void connectAndSubscribe(const QString& brokerUrl,
+                             const QString& clientId,
+                             const QStringList& topics,
+                             const QString& username = QString(),
+                             const QString& password = QString());
+    void subscribeTopic(const QString& topic);
+    void disconnect();
+    bool isConnected() const;
+    void setThrottleInterval(int ms);
+
+signals:
+    void inferenceFinished(const InferenceResult& result);
+    void channelsDiscovered(const QVector<ChannelInfo>& channels);
+    void error(const QString& message);
+
+private:
+    QThread*             mThread;
+    InferenceSubscriber* mSubscriber;
 };
 
 #endif // INFERENCESUBSCRIBER_H
