@@ -8,7 +8,17 @@
     "value": [
       {
         "id": 0,
-        "name": "人员",
+        "name": "box",
+        "sub_cls": [
+          {
+            "id": 0,
+            "enable": true
+          }
+        ]
+      },
+      {
+        "id": 1,
+        "name": "defect",
         "sub_cls": [
           {
             "id": 0,

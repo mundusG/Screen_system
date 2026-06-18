@@ -160,17 +160,31 @@ void CameraCapture::captureOne()
 
     if (frame.empty()) {
         if (mUserStopped) return;
-        // Try to reconnect
-        qWarning() << "CameraCapture[" << mCameraId << "]: Empty frame, attempting reconnect...";
+
+        // Exponential backoff: 5s → 10s → 20s → 30s (max)
+        qint64 now = QDateTime::currentMSecsSinceEpoch();
+        if (mLastReconnectAttempt > 0 && (now - mLastReconnectAttempt) < mReconnectDelayMs) {
+            return;  // still in backoff period, skip
+        }
+        mLastReconnectAttempt = now;
+
+        qWarning() << "CameraCapture[" << mCameraId << "]: Empty frame, attempting reconnect (backoff=" << mReconnectDelayMs << "ms)...";
         emit error(QString("Camera %1: Empty frame").arg(mCameraId));
 
         QMutexLocker locker(&mMutex);
         QString src = mSource;
         locker.unlock();
         close();
-        open(src);
+        if (open(src)) {
+            mReconnectDelayMs = 0;  // reset on success
+        } else {
+            mReconnectDelayMs = qMin(qMax(mReconnectDelayMs * 2, 5000), 30000);
+        }
         return;
     }
+
+    // Successful frame — reset backoff
+    mReconnectDelayMs = 0;
 
     mFrameCount++;
 
@@ -181,8 +195,12 @@ void CameraCapture::captureOne()
     data.timestamp = QDateTime::currentMSecsSinceEpoch();
     data.frameIndex = mFrameCount;
 
-    // Emit display frame every time
-    emit displayFrameReady(data);
+    // Emit display frame — gate with atomic to prevent event queue bloat.
+    // At most one frame in-flight; drop if main thread hasn't consumed previous.
+    if (mDisplayPending.loadRelaxed() == 0) {
+        mDisplayPending.storeRelaxed(1);
+        emit displayFrameReady(data);
+    }
 
     // Emit inference frame at configured interval
     int framesPerInference = mInferenceIntervalMs / 33;
@@ -202,6 +220,11 @@ void CameraCapture::captureOne()
         mFpsFrameCount = 0;
         emit fpsUpdated(mCameraId, fps);
     }
+}
+
+void CameraCapture::frameConsumed()
+{
+    mDisplayPending.storeRelaxed(0);
 }
 
 // ============================================================
@@ -286,4 +309,9 @@ void CameraThread::requestStart(const QString& source)
 {
     QMetaObject::invokeMethod(mCapture, "requestStart", Qt::QueuedConnection,
                               Q_ARG(QString, source));
+}
+
+void CameraThread::notifyFrameConsumed()
+{
+    QMetaObject::invokeMethod(mCapture, "frameConsumed", Qt::QueuedConnection);
 }

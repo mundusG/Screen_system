@@ -5,12 +5,14 @@
   "height": 640,
   "conf_thresh": 0.5,
   "nms_thresh": 0.3,
-  "model_path": "person_drive0603_2.rk3576.rknn",
-  "cls_num": 1,
+  "model_path": "zhongji_box0616.rk3576.rknn",
+  "cls_num": 2,
   "cls_name": [
-    "人员"
+    "box",
+    "defect"
   ],
   "cls_enable": [
+    0,
     0
   ]
 }

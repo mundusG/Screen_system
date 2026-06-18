@@ -54,9 +54,16 @@ if pgrep -x mosquitto >/dev/null; then
     echo "  mosquitto 已在运行"
 else
     echo "  启动 mosquitto..."
-    mosquitto -d -c /etc/mosquitto/mosquitto.conf 2>/dev/null || mosquitto -d
+    # 清理残留 pid 文件
+    rm -f /run/mosquitto/mosquitto.pid /var/run/mosquitto.pid 2>/dev/null || true
+    mkdir -p /run/mosquitto 2>/dev/null || true
+    mosquitto -d -c /etc/mosquitto/mosquitto.conf 2>/dev/null || mosquitto -d 2>/dev/null || true
     sleep 1
-    echo "  mosquitto 已启动"
+    if pgrep -x mosquitto >/dev/null; then
+        echo "  mosquitto 已启动"
+    else
+        echo "  [错误] mosquitto 启动失败"
+    fi
 fi
 
 # ─── 3. 部署算法包 ───

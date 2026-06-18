@@ -64,6 +64,9 @@ public slots:
     /// User-initiated start
     void requestStart(const QString& source);
 
+    /// Called from main thread when display frame has been consumed
+    void frameConsumed();
+
 private:
     void captureLoop();
 
@@ -78,6 +81,14 @@ private:
     // FPS calculation
     qint64      mLastFpsTime;
     int         mFpsFrameCount;
+
+    // Frame dropping: at most one display frame in-flight to prevent
+    // main-thread event queue bloat (30fps × 8 cameras = 240 msg/s).
+    QAtomicInt  mDisplayPending{0};
+
+    // RTSP reconnect backoff (5s initial, 30s max)
+    int     mReconnectDelayMs = 0;
+    qint64  mLastReconnectAttempt = 0;
 
     mutable QMutex mMutex;
     bool mUserStopped = false;
@@ -101,6 +112,9 @@ public:
     void requestStart(const QString& source);
 
     CameraCapture* capture() const { return mCapture; }
+
+    /// Notify capture that the main thread has consumed the display frame
+    void notifyFrameConsumed();
 
 signals:
     void displayFrameReady(const FrameData& frame);

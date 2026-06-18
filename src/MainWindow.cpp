@@ -27,6 +27,7 @@
 #include <QDebug>
 #include <QStandardPaths>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QCoreApplication>
 
@@ -865,6 +866,10 @@ void MainWindow::onDisplayFrameReady(const FrameData& frame)
     if (camId >= 0 && camId < mVideoWidgets.size()) {
         mVideoWidgets[camId]->updateDisplayFrame(frame);
     }
+    // Signal capture thread that frame was consumed (backpressure)
+    if (mCameraThreads.contains(camId)) {
+        mCameraThreads[camId]->notifyFrameConsumed();
+    }
 }
 
 void MainWindow::onInferenceFrameReady(const FrameData& frame)
@@ -881,9 +886,6 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
 
     if (!mCameraRunning.value(camId, false))
         return;
-
-    qDebug() << "MainWindow::onInferenceFinished: camera" << camId
-             << "detections:" << result.detections.size();
 
     if (mSmoothingFilters.contains(camId)) {
         mSmoothingFilters[camId]->processInferenceResult(result);
@@ -923,12 +925,8 @@ void MainWindow::onDisplayResultReady(const DisplayResult& result)
     if (!mCameraRunning.value(camId, false))
         return;
 
-    qDebug() << "MainWindow::onDisplayResultReady: camera" << camId
-             << "detections:" << result.detections.size();
-
     if (camId >= 0 && camId < mVideoWidgets.size()) {
         mVideoWidgets[camId]->updateDetectionOverlay(result);
-        qDebug() << "MainWindow::onDisplayResultReady: Updated VideoWidget" << camId;
     } else {
         qWarning() << "MainWindow::onDisplayResultReady: Invalid camera ID" << camId;
     }
@@ -961,6 +959,37 @@ void MainWindow::updatePanels()
             int dets = w->detectionCount();
             bool online = w->hasSignal() || mCameraThreads.contains(i) || mImageStreamThreads.contains(i);
             mAlertPanel->updateDeviceStatus(i, name, online, fps, dets);
+        }
+    }
+
+    // Health self-check: log RSS every 60s (30 ticks × 2s)
+    static int healthTick = 0;
+    healthTick++;
+    if (healthTick % 30 == 0) {
+        double rssMB = -1.0;
+        QFile f("/proc/self/status");
+        if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            QByteArray data = f.readAll();
+            f.close();
+            int idx = data.indexOf("VmRSS:");
+            if (idx >= 0) {
+                int end = data.indexOf('\n', idx);
+                QByteArray line = data.mid(idx, end - idx);
+                QList<QByteArray> parts = line.split('\t');
+                if (parts.size() >= 2)
+                    rssMB = parts.last().trimmed().toDouble() / 1024.0;
+            }
+        }
+        int onlineCams = 0;
+        for (auto it = mCameraRunning.begin(); it != mCameraRunning.end(); ++it)
+            if (it.value()) onlineCams++;
+        qDebug() << "Health: RSS=" << rssMB << "MB, running=" << mRunning
+                 << ", online_cams=" << onlineCams
+                 << ", mode=" << mSystemMode
+                 << ", uptime_min=" << (mStartTime > 0 ? (QDateTime::currentMSecsSinceEpoch() - mStartTime) / 60000 : 0);
+
+        if (rssMB > 800.0) {
+            qWarning() << "HIGH MEMORY WARNING: RSS=" << rssMB << "MB exceeds 800MB threshold!";
         }
     }
 }

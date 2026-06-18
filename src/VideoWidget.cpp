@@ -82,7 +82,9 @@ void VideoWidget::updateDisplayFrame(const FrameData& frame)
     if (frame.image.empty()) return;
     {
         QMutexLocker locker(&mFrameMutex);
-        mCurrentFrame = frame.image.clone();
+        // cv::Mat refcount is thread-safe; no need to deep-copy.
+        // The source FrameData in Qt's event queue already holds a ref.
+        mCurrentFrame = frame.image;
     }
     mLastFrameTime = QDateTime::currentMSecsSinceEpoch();
     mHasSignal = true;
@@ -94,14 +96,6 @@ void VideoWidget::updateDetectionOverlay(const DisplayResult& result)
     {
         QMutexLocker locker(&mDetectionMutex);
         mDetections = result.detections;
-        qDebug() << "VideoWidget[" << mCameraId << "]: Updated detections, count:" << mDetections.size();
-        for (int i = 0; i < mDetections.size() && i < 3; ++i) {
-            qDebug() << "  Det" << i << ": class=" << mDetections[i].classId
-                     << "conf=" << mDetections[i].confidence
-                     << "bbox=(" << mDetections[i].bbox.x << "," << mDetections[i].bbox.y
-                     << "," << mDetections[i].bbox.width << "x" << mDetections[i].bbox.height << ")"
-                     << "filtered=" << mDetections[i].filtered;
-        }
     }
     mLastDetectionTime = QDateTime::currentMSecsSinceEpoch();
     mHasDetections = !result.detections.isEmpty();

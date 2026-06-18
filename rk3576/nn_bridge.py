@@ -27,6 +27,7 @@ nn_bridge.py - 桥接 nn_server 推理输出到显示系统
 """
 
 import json
+import os
 import sys
 import time
 import signal
@@ -109,19 +110,6 @@ class NNBridge:
         self.active_channels = {}
         self.discovery_changed = True
 
-    def _register_channel(self, chid):
-        camera_id = self.channel_map.get(str(chid), chid - 1)
-        with self._lock:
-            self.active_channels[chid] = {
-                'camera_id': camera_id,
-                'publish_topic': f'inference/camera/{camera_id}/detections',
-                'frame_count': 0,
-                'last_seen': time.time(),
-                'stats': ChannelStats(),
-            }
-            self.discovery_changed = True
-        logger.info("Auto-discovered channel chid={} -> camera_id={}", chid, camera_id)
-
     def _check_channel_timeout(self):
         now = time.time()
         with self._lock:
@@ -144,18 +132,16 @@ class NNBridge:
         self.local_client.on_message = self._on_local_message
         self.local_client.on_disconnect = self._on_local_disconnect
         # Prevent unbounded memory growth from internal message queue.
-        # At ~120 msg/s, 2000 slots = ~16 s buffer — enough for any sane
-        # burst without risking OOM kill during a 6+ hour run.
-        self.local_client.max_queued_messages = 2000
+        # At ~120 msg/s, 500 slots = ~4 s buffer — tight enough to prevent
+        # OOM during a prolonged broker stall, long enough for brief bursts.
+        self.local_client.max_queued_messages = 500
 
         client_id = self.config.get('client_id', f"nn_bridge_pub_{int(time.time())}")
         self.remote_client = mqtt.Client(client_id)
         self.remote_client.on_connect = self._on_remote_connect
         self.remote_client.on_disconnect = self._on_remote_disconnect
-        self.remote_client.max_queued_messages = 2000
-        # QoS 0 publishes are fire-and-forget, but cap inflight anyway
-        # so a stalled remote broker can't exhaust memory.
-        self.remote_client.max_inflight_messages_set(100)
+        self.remote_client.max_queued_messages = 500
+        self.remote_client.max_inflight_messages_set(50)
 
         lwt_topic = "inference/bridge/status"
         lwt_payload = json.dumps({"status": "offline", "client_id": client_id})
@@ -180,22 +166,28 @@ class NNBridge:
         self.remote_client.loop_start()
 
         logger.info("NN Bridge started, geid={}, topic={}, discovery={}, channel_map={}, "
-                     "max_queued=2000",
+                     "max_queued=500, effective_rate={}fps",
                      self.geid, self.subscribe_topic, self.discovery_topic,
-                     self.channel_map if self.channel_map else "auto(chid-1)")
+                     self.channel_map if self.channel_map else "auto(chid-1)",
+                     self.rate_limit if self.rate_limit > 0 else 10)
 
+        loop_count = 0
         try:
             while self.running:
-                time.sleep(self.stats_interval)
+                time.sleep(5)
                 if not self.running:
                     break
+
+                loop_count += 1
 
                 # Periodic MQTT reconnect (non-blocking — reconnect runs in
                 # the paho network thread via loop_start).
                 self._handle_reconnects()
-
                 self._check_channel_timeout()
-                self._print_stats()
+
+                # Print stats and publish discovery every stats_interval seconds
+                if loop_count % max(1, self.stats_interval // 5) == 0:
+                    self._print_stats()
                 if self.discovery_changed:
                     self._publish_discovery()
                     with self._lock:
@@ -342,41 +334,40 @@ class NNBridge:
         if chid < 0:
             return
 
-        # Auto-register new channel (lock held inside _register_channel)
-        with self._lock:
-            if chid not in self.active_channels:
-                # Must release lock before calling _register_channel to avoid
-                # deadlock (it also acquires _lock), so we register after.
-                need_register = True
-            else:
-                need_register = False
+        now = time.time()
 
-        if need_register:
-            self._register_channel(chid)
+        # ── Single lock: register + state + rate limit + frame count ──
+        effective_rate = self.rate_limit if self.rate_limit > 0 else 10
+        min_interval = 1.0 / effective_rate
 
         with self._lock:
             if chid not in self.active_channels:
-                return  # channel was removed between register and now
+                camera_id = self.channel_map.get(str(chid), chid - 1)
+                self.active_channels[chid] = {
+                    'camera_id': camera_id,
+                    'publish_topic': f'inference/camera/{camera_id}/detections',
+                    'frame_count': 0,
+                    'last_seen': now,
+                    'stats': ChannelStats(),
+                }
+                self.discovery_changed = True
+                logger.info("Auto-discovered channel chid={} -> camera_id={}", chid, camera_id)
+
             ch = self.active_channels[chid]
-            ch['last_seen'] = time.time()
+            ch['last_seen'] = now
             camera_id = ch['camera_id']
+            pub_topic = ch['publish_topic']
 
-        # Rate limiting
-        if self.rate_limit > 0:
-            now = time.time()
-            min_interval = 1.0 / self.rate_limit
-            with self._lock:
-                last_time = self.last_publish_time.get(camera_id, 0)
+            # Rate limit — check and set atomically
+            last_time = self.last_publish_time.get(camera_id, 0)
             if now - last_time < min_interval:
                 return
-            with self._lock:
-                self.last_publish_time[camera_id] = now
+            self.last_publish_time[camera_id] = now
 
-        with self._lock:
             ch['frame_count'] += 1
             frame_count = ch['frame_count']
 
-        # Convert nn_output to normalized format
+        # ── Format conversion (no lock needed — only local vars) ──
         detections = []
         for det in nn_output:
             x1 = det.get('x1', 0)
@@ -410,7 +401,7 @@ class NNBridge:
             detections.append(det_out)
 
         # Build output message
-        now_ms = int(time.time() * 1000)
+        now_ms = int(now * 1000)
         output_msg = {
             'camera_id': camera_id,
             'timestamp': now_ms,
@@ -420,10 +411,13 @@ class NNBridge:
             'inference_time_ms': 0,
         }
 
-        pub_topic = ch['publish_topic']
+        # Skip publish if remote broker is disconnected — prevents
+        # unbounded message queue buildup in paho's internal buffer.
+        if not self.remote_client.is_connected():
+            return
         self.remote_client.publish(pub_topic, json.dumps(output_msg), qos=self.qos)
 
-        # Record stats
+        # ── Record stats (second lock — lightweight) ──
         src_ts = param.get('timestamp', 0)
         latency = (now_ms - src_ts) if src_ts > 0 else 0
         with self._lock:
@@ -434,7 +428,19 @@ class NNBridge:
                         camera_id, chid, frame_count,
                         len(detections), pub_topic)
 
+    @staticmethod
+    def _read_rss_mb():
+        """Read RSS from /proc/self/status. Returns MB, or -1 on failure."""
+        try:
+            with open('/proc/self/status') as f:
+                for line in f:
+                    if line.startswith('VmRSS:'):
+                        return int(line.split()[1]) / 1024.0  # kB → MB
+        except Exception:
+            return -1.0
+
     def _print_stats(self):
+        rss_mb = self._read_rss_mb()
         with self._lock:
             chids = sorted(self.active_channels)
             parts = []
@@ -445,9 +451,12 @@ class NNBridge:
                     parts.append(f"ch[{chid}]: {s['count']}msg {s['rate']}msg/s "
                                  f"lat={s['avg_latency_ms']}ms")
         if parts:
-            logger.info("Stats | {}", " | ".join(parts))
+            logger.info("Stats | RSS={:.0f}MB | {}", rss_mb, " | ".join(parts))
         else:
-            logger.info("Stats | no messages in last interval")
+            logger.info("Stats | RSS={:.0f}MB | no messages in last interval", rss_mb)
+
+        if rss_mb > 500:
+            logger.warning("HIGH MEMORY: RSS={:.0f}MB exceeds 500MB threshold", rss_mb)
 
 
 def main():
@@ -457,10 +466,30 @@ def main():
         sys.exit(1)
 
     config_path = sys.argv[1]
+
+    # Log file path — prefer project-local log dir (created by deploy.sh).
+    # Fall back to script dir, then stderr-only. /tmp is deliberately
+    # excluded because permission conflicts with other processes.
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_log = os.path.join(os.path.dirname(script_dir), 'log', 'nn_bridge.log')
+    log_paths = [project_log,
+                 os.path.join(script_dir, 'nn_bridge.log')]
+
     logger.remove()
     logger.add(sys.stderr, level="INFO",
                format="{time:HH:mm:ss} | {level:<5} | {message}")
-    logger.add("/tmp/nn_bridge.log", rotation="10 MB", retention="3 days")
+
+    log_ok = False
+    for lp in log_paths:
+        try:
+            os.makedirs(os.path.dirname(lp), exist_ok=True)
+            logger.add(lp, rotation="10 MB", retention="3 days")
+            log_ok = True
+            break
+        except PermissionError:
+            continue
+    if not log_ok:
+        logger.warning("Cannot create log file, logging to stderr only")
 
     bridge = NNBridge(config_path)
     bridge.start()

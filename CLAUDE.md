@@ -238,185 +238,66 @@ screen_system/
 7. **设置保存后摄像头名称不刷新**：`VideoWidget` 新增 `setTitle()` 方法，保存设置后标题立即更新
 8. **UI 重构 v2**：移除菜单栏和背景图片，改用三栏布局（导航栏 + 网格 + 面板），全 QPainter 自绘面板
 
-## 新建环境部署指南
-
-以下命令在 WSL2 Ubuntu 24.04 中从头到尾执行一遍即可完成部署。
-
-### 1. 安装依赖
-
-```bash
-sudo apt update
-sudo apt install -y build-essential cmake g++ \
-    qtbase5-dev libqt5widgets5 libopencv-dev \
-    fonts-wqy-microhei fonts-wqy-zenhei
-
-# 检查 moc 是否来自 WSL 而非 Windows（anaconda 等会污染 PATH）
-which moc          # 必须是 /usr/lib/qt5/bin/moc，如果是 /mnt/c/... 则执行下一行
-export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '/mnt/c' | tr '\n' ':')
-```
-
-### 2. 同步源码到 WSL
-
-```bash
-# 源码必须放在 ~/ 下（ext4），不能在 /mnt/d/ 下编译
-# 原因：跨文件系统 + Windows PATH 污染 + 特殊字符路径会导致 CMake AUTOMOC 失败
-mkdir -p ~/screen_system
-cp -r /mnt/d/\!code/screen_system/* ~/screen_system/
-```
-
-### 2.1. 创建本地配置文件
-
-```bash
-# 首次 clone 后，config/default_config.json 不存在（在 .gitignore 中）
-# 从模板复制一份并编辑：
-cp config/default_config.json.example config/default_config.json
-# 编辑 mqtt.broker 为推理端 IP: tcp://<推理端IP>:1883
-
-# 同理，rk3576 侧的 bridge 配置
-cp rk3576/bridge_config.json.example rk3576/bridge_config.json
-# 编辑 preview.host 为推理端 IP
-```
-
-> **CMake 自动 fallback**: 如果忘记复制配置文件，CMake 会自动使用 `.example` 模板编译（localhost 默认值），不会报错中断。
-
-### 3. 编译
-
-```bash
-cd ~/screen_system
-rm -rf build && mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
-```
-
-### 4. 运行
-
-```bash
-./ScreenInferenceSystem
-
-# 如果中文显示为空格，重启 WSL 让字体生效：
-# 在 Windows 终端执行: wsl --shutdown
-# 然后重新进入 WSL 运行
-
-# 命令行参数
-./ScreenInferenceSystem -f                    # 全屏
-./ScreenInferenceSystem -c /path/to/config.json
-./ScreenInferenceSystem -n 4                  # 4路摄像头
-```
-
-## 故障排查
-
-### WSL DNS 失效
-
-```bash
-# /etc/resolv.conf 中设置可用的 DNS
-nameserver 223.5.5.5
-nameserver 223.6.6.6
-
-# /etc/wsl.conf 中禁止自动生成
-[network]
-generateResolvConf = false
-```
-
-## 模型导出指南
-
-系统支持 YOLOv5 和 YOLOv8 的 **decoded 格式** ONNX 模型（输出已包含 bbox decode）。不支持 raw 特征图格式。
-
-### YOLOv5 导出
-
-```bash
-# 标准导出（输出 [1, N, 5+numClasses]，每行 cx/cy/w/h/obj_conf/cls...）
-python export.py --weights best.pt --include onnx --opset 12
-```
-
-### YOLOv8 导出
-
-```bash
-# 标准导出（输出 [1, 4+numClasses, 8400]，无 obj_conf）
-yolo export model=best.pt format=onnx opset=12
-```
-
-### 注意
-
-- 输入分辨率在配置文件中设置（`inputWidth` / `inputHeight`），须与训练/导出时一致
-- 系统会自动判断 YOLOv5 / YOLOv8 格式
-- 如果输出是 raw 特征图（多个 4D tensor），系统会打印警告并跳过推理
-
-## 待完成
-
-- [x] 添加 YOLO ONNX 模型文件到 `models/`
-- [x] 测试摄像头接入（需要 USB 摄像头或 RTSP 流）
-- [ ] 实现 Dashboard 仪表盘视图
-- [ ] 实现 Playback 回放视图
-- [ ] 实现 Snapshot 截图功能
-- [ ] 删除旧版 StatsPanel（确认无引用后）
-
- 1. 查看网口名称：
-  ip link show | grep -E "^[0-9]"
-
-  2. 给连接摄像头的网口配静态 IP（假设网口是 eth0）：
-  sudo ip addr add 169.254.98.100/16 dev eth0
-  sudo ip link set eth0 up
-
-  3. 测试连通：
-  ping 169.254.98.43 -c 3
-
-## 多设备部署指南（推理端 + 展示端）
+## rk3576 推理端部署
 
 ### 系统架构
 
 ```
-┌─────────────────────────────────┐     ┌─────────────────────────────────┐
-│  rk3576-A (推理端)               │     │  rk3578 / WSL (展示端)           │
-│                                 │     │                                 │
-│  摄像头 → dmg(RTSP采集)          │     │  ScreenInferenceSystem (Qt5)    │
-│         → nn_server(RKNN推理)    │     │    ├─ MQTT 订阅推理数据          │
-│         → nn_bridge(格式转换)    │─────│    ├─ RTSP 读取视频流            │
-│                                 │MQTT │    └─ 自动发现通道               │
-│  preview: rtsp://IP:5544/       │     │                                 │
-│  mosquitto: 0.0.0.0:1883       │     │                                 │
-└─────────────────────────────────┘     └─────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│  rk3576 (推理端)                              │
+│                                              │
+│  摄像头 → dmg(RTSP采集) → nn_server(RKNN推理)  │
+│                         → nn_bridge(格式转换)  │
+│                                              │
+│  mosquitto (127.0.0.1:1883，内部管道)         │
+│  preview: rtsp://<设备IP>:5544/              │
+└──────────────┬───────────────────────────────┘
+               │ MQTT (推理结果 + discovery)
+               ↓
+┌──────────────────────────────────────────────┐
+│  展示端 (rk3578 / WSL)                        │
+│  ScreenInferenceSystem (Qt5)                 │
+│    ├─ MQTT 订阅: 推理数据 + 通道发现           │
+│    └─ RTSP 拉流: rtsp://<推理端IP>:5544/...   │
+└──────────────────────────────────────────────┘
 ```
 
-### 网络要求
-
-- 推理端和展示端在同一局域网
-- 推理端 mosquitto 监听 0.0.0.0:1883（非 127.0.0.1）
-- 展示端能访问推理端的 MQTT(1883) 和 RTSP(5544) 端口
+**数据流**：推理端内部 mosquitto 做 dmg→nn_server→nn_bridge 的管道；nn_bridge 把最终结果通过 `mqtt_remote` 发布到展示端可见的 broker。展示端 Qt 程序连同一个 broker 订阅推理结果和通道发现消息。
 
 ---
 
 ### A. 推理端部署（rk3576）
 
-#### A.1 从开发机一键推送
+> **端口说明**：以下 `<设备IP>` 根据实际情况替换。如果是公网端口转发，则 `<设备IP>` 填公网 IP，`<SSH端口>` 填转发端口（如 `61837`）；局域网设备则端口填 `22` 或不传。
+
+#### A.1 从开发机一键推送配置
 
 ```bash
-# 在开发机（Windows / WSL）执行
 cd /mnt/d/\!code/screen_system
-./rk3576/deploy.sh <设备IP>
+./rk3576/deploy.sh <设备IP> root /models/screen_system <SSH端口>
 
-# 例:
+# 例——局域网:
 ./rk3576/deploy.sh 192.168.77.145
+
+# 例——公网端口转发:
+./rk3576/deploy.sh 42.193.140.103 root /models/screen_system 61837
 ```
 
-这会将所有配置推送到设备 `/models/screen_system/rk3576/`。
+将配置推送到设备 `/models/screen_system/rk3576/`。
 
-#### A.2 首次部署：设备上运行安装脚本
+#### A.2 首次部署：运行安装脚本
 
 ```bash
-ssh root@<设备IP>
-bash /models/screen_system/rk3576/setup_device.sh
+ssh -p <SSH端口> root@<设备IP> "bash /models/screen_system/rk3576/setup_device.sh"
 ```
 
-此脚本自动完成：
-- 安装 mosquitto、python3、paho-mqtt、loguru
-- 配置 mosquitto 监听 0.0.0.0:1883
-- 创建 systemd 服务（nn_bridge.service）
-- 设置开机自启动
+自动完成：安装 mosquitto/python3/paho-mqtt/loguru → 配置 mosquitto 监听 0.0.0.0:1883 → 创建 nn_bridge systemd 服务 → 开机自启。
 
-#### A.3 手动配置 mosquitto（如果 setup_device.sh 不可用）
+#### A.3 配置 mosquitto
+
+在设备上执行：
 
 ```bash
-# 确保 mosquitto 监听所有网口
 echo -e "listener 1883 0.0.0.0\nallow_anonymous true" | sudo tee /etc/mosquitto/conf.d/screen_system.conf
 sudo systemctl restart mosquitto
 
@@ -428,40 +309,29 @@ ss -tlnp | grep 1883
 #### A.4 推送模型文件
 
 ```bash
-scp your_model.rk3576.rknn root@<设备IP>:/models/screen_system/model/
+scp -P <SSH端口> your_model.rknn root@<设备IP>:/models/screen_system/model/
 ```
 
-#### A.5 启动/停止推理
+#### A.5 启动 / 停止
 
 ```bash
-ssh root@<设备IP>
+ssh -p <SSH端口> root@<设备IP>
 
-# 启动（部署算法包 + 启动 nn_bridge）
 cd /models/screen_system/rk3576
-./start_inference.sh
-
-# 只启动 bridge（不重新部署算法包）
-./start_inference.sh --no-deploy
-
-# 停止
-./stop_inference.sh
-
-# 查看日志
-tail -f /models/screen_system/log/nn_bridge.log
+./start_inference.sh              # 部署算法包 + 启动 nn_bridge
+./start_inference.sh --no-deploy  # 只启动 bridge（不重部署算法包）
+./stop_inference.sh               # 停止
+tail -f /models/screen_system/log/nn_bridge.log  # 查看日志
 ```
 
-#### A.6 需要修改的配置
-
-**`rk3576/bridge_config.json`** — 根据实际环境修改：
+#### A.6 需要修改的配置：`rk3576/bridge_config.json`
 
 ```json
 {
-    "mqtt_local": {"host": "127.0.0.1", "port": 1883},
-    "mqtt_remote": {"host": "127.0.0.1", "port": 1883},
+    "mqtt_local":  { "host": "127.0.0.1", "port": 1883 },
+    "mqtt_remote": { "host": "127.0.0.1", "port": 1883 },
     "client_id": "nn_bridge_rk3576",
     "geid": 200,
-    "stats_interval": 30,
-    "rate_limit": 0,
     "channel_timeout": 30,
     "preview": {
         "host": "<推理端IP>",
@@ -473,173 +343,41 @@ tail -f /models/screen_system/log/nn_bridge.log
 
 | 字段 | 说明 | 改什么 |
 |------|------|--------|
-| `mqtt_remote.host` | 远程 MQTT broker | 如果展示端有自己的 broker 就改为展示端 IP，否则保持 127.0.0.1 |
-| `preview.host` | 展示端连接 RTSP 用的 IP | **必须改为推理端的局域网 IP**（展示端能访问的地址） |
-| `preview.port` | dmg preview 端口 | 默认 5544，一般不用改 |
+| `preview.host` | 展示端拉 RTSP 流用的 IP | **必改**：填推理端局域网 IP |
+| `mqtt_remote.host` | 发布推理结果的目标 broker | 单机部署保持 `127.0.0.1`；多机方案见下文 D 节 |
+| `mqtt_local.host` | 本机内部管道 broker | 保持 `127.0.0.1` |
 | `geid` | 算法组 ID | 对应 nn_server 的 geid，默认 200 |
-| `channel_timeout` | 通道超时秒数 | 超过此时间无数据的通道自动下线 |
+| `discovery_topic` | 通道发现 topic 前缀 | 保持 `inference/bridge`，nn_bridge 会拼成 `/channels` |
 
-#### A.7 验证推理端
+#### A.7 验证
 
 ```bash
-# 在推理端上检查 nn_bridge 是否在运行
-pgrep -a nn_bridge
-
-# 检查 MQTT 是否有发现消息
-mosquitto_sub -t 'inference/bridge/channels' -v -C 1
-
-# 检查推理输出
-mosquitto_sub -t 'inference/camera/+/detections' -v -C 1
-
-# 检查 RTSP 流
-ffprobe rtsp://127.0.0.1:5544/preview/5 2>&1 | grep Stream
+pgrep -a nn_bridge                                          # 进程是否在跑
+mosquitto_sub -t 'inference/bridge/channels' -v -C 1       # discovery 消息
+mosquitto_sub -t 'inference/camera/+/detections' -v -C 1   # 推理结果
+ffprobe rtsp://127.0.0.1:5544/preview/5 2>&1 | grep Stream  # RTSP 流
 ```
 
 ---
 
-### B. 展示端部署
+### B. 展示端部署（rk3578 / 其他 Linux 设备）
 
-#### B.1 WSL2 开发/测试环境
+展示端需要完整的 C++ 项目源码来编译 Qt 程序。推理端只需 `rk3576/` 目录（Python 脚本），两者独立。
+
+#### B.1 安装依赖
 
 ```bash
-# 安装依赖
 sudo apt update
 sudo apt install -y build-essential cmake g++ \
     qtbase5-dev libqt5widgets5 libopencv-dev \
     libpaho-mqttpp-dev libpaho-mqtt-dev \
     fonts-wqy-microhei mosquitto-clients
-
-apt install -y ffmpeg
-
-
-# 同步编译
-cd ~/screen_system && ./sync.sh
-# 或手动:
-mkdir -p ~/screen_system && rsync -av --delete --exclude build/ --exclude .git/ /mnt/d/\!code/screen_system/ ~/screen_system/
-cd ~/screen_system && mkdir -p build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release && make -j$(nproc)
-
-# 运行
-cd ~/screen_system/build
-./ScreenInferenceSystem
 ```
 
-#### B.2 rk3578 设备部署
+#### B.2 拷贝源码 & 编译
 
 ```bash
-# 安装依赖
-sudo apt update
-sudo apt install -y build-essential cmake g++ \
-    qtbase5-dev libqt5widgets5 libopencv-dev \
-    libpaho-mqttpp-dev libpaho-mqtt-dev \
-    fonts-wqy-microhei mosquitto-clients
-
-# 拷贝源码到设备
-scp -r /mnt/d/\!code/screen_system root@<展示端IP>:/models/screen_system
-
-# 在设备上编译
-ssh root@<展示端IP>
-cd /models/screen_system
-mkdir -p build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
-
-# 运行（需要 X11 环境）
-export DISPLAY=:0
-export QT_XCB_GL_INTEGRATION=none
-./ScreenInferenceSystem
-```
-
-#### B.3 需要修改的配置
-
-**`config/default_config.json`** — 根据实际环境修改：
-
-```json
-{
-    "system": {
-        "mode": "mqtt_subscribe"
-    },
-    "mqtt": {
-        "broker": "tcp://<推理端IP>:1883",
-        "client_id": "display_device",
-        "username": "",
-        "password": ""
-    }
-}
-```
-
-| 字段 | 说明 | 改什么 |
-|------|------|--------|
-| `mqtt.broker` | MQTT broker 地址 | **改为推理端的局域网 IP**，格式 `tcp://IP:1883` |
-| `mqtt.client_id` | MQTT 客户端 ID | 多台展示端时需要不同的 ID |
-| `system.mode` | 系统模式 | 保持 `mqtt_subscribe` |
-
-cameras 数组不需要手动配置 — 系统会通过 MQTT discovery 自动发现通道。
-
-#### B.4 验证展示端
-
-```bash
-# 测试网络连通
-ping <推理端IP>
-
-# 测试 MQTT 连接
-mosquitto_sub -h <推理端IP> -t 'inference/bridge/channels' -v -C 1
-
-# 测试 RTSP 流
-ffprobe rtsp://<推理端IP>:5544/preview/<chid> 2>&1 | grep Stream
-
-# 启动展示端后按 Space 启动摄像头
-```
-
----
-
-### C. 快速检查清单
-
-#### 新设备部署前确认
-
-- [ ] 推理端和展示端网络互通
-- [ ] 推理端 mosquitto 监听 0.0.0.0:1883
-- [ ] `bridge_config.json` 的 `preview.host` = 推理端 IP
-- [ ] `default_config.json` 的 `mqtt.broker` = `tcp://推理端IP:1883`
-- [ ] 模型文件已拷贝到推理端 `/models/screen_system/model/`
-- [ ] 推理端 nn_bridge 已启动且 discovery 消息正常
-- [ ] 展示端能收到 discovery 消息且 RTSP 流可达
-
-#### 常见问题
-
-| 现象 | 原因 | 解决 |
-|------|------|------|
-| MQTT Connection refused | mosquitto 只监听 127.0.0.1 | 加 `listener 1883 0.0.0.0` 配置 |
-| 有框无视频 | RTSP 不通或 `preview.host` 错误 | 检查 `bridge_config.json` 的 preview.host |
-| 有视频无框 | nn_bridge 未运行或 MQTT broker 地址错误 | 检查 nn_bridge 日志和 `default_config.json` 的 broker |
-| 通道未发现 | nn_bridge 无 MQTT 数据或 discovery topic 不匹配 | `mosquitto_sub -t '/dposter/200/cmd' -v -C 1` 看源数据 |
-| FPS 低 | preview 流本身帧率低，或网络带宽不足 | `ffprobe` 检查源流帧率 |
-| 闪退 | OpenCV FFMPEG 异常 | 检查 RTSP 地址是否正确，设备网络是否稳定 |
-
----
-
-### D. 多推理端扩展（2台 rk3576 + 1台展示端）
-
-架构目标：rk3576-A 管 camera 0-3，rk3576-B 管 camera 4-7。
-
-1. 两台推理端的 `bridge_config.json` 使用**不同的 geid** 或**不同的 client_id**
-2. 两台推理端的 `mqtt_remote.host` 都指向**同一个 MQTT broker**（可以是展示端或第三方）
-3. `preview.host` 分别填各自的 IP
-4. 展示端的 `mqtt.broker` 指向那个统一的 broker
-5. 通道自动发现会合并两台推理端的 discovery 消息
-
-```
-rk3576-A (192.168.77.145)          rk3576-B (192.168.77.146)
-  preview.host=192.168.77.145        preview.host=192.168.77.146
-  mqtt_remote.host=192.168.77.100    mqtt_remote.host=192.168.77.100
-  client_id=nn_bridge_A              client_id=nn_bridge_B
-          │                                    │
-          └────── MQTT broker (192.168.77.100) ────── 展示端
-```
-
-注意：当前 discovery 机制每台 bridge 发布自己的 channels（retained），展示端会收到最后一条。如需合并多台，后续可改为分 topic 发布：`inference/bridge/A/channels`。
-
-
+# 从开发机推送源码（排除非必要文件）
 cd /mnt/d/\!code/screen_system && \
   tar -czf - \
       --exclude=build \
@@ -654,4 +392,251 @@ cd /mnt/d/\!code/screen_system && \
       --exclude=.DS_Store \
       --exclude=.gitignore \
       . | \
-  ssh -p 61837 root@42.193.140.103 "mkdir -p /models/screen_system && cd /models/screen_system && tar -xzf -"
+  ssh -p <SSH端口> root@<展示端IP> "mkdir -p /models/screen_system && cd /models/screen_system && tar -xzf -"
+
+# 在展示设备上编译
+ssh -p <SSH端口> root@<展示端IP> << 'ENDSSH'
+cd /models/screen_system
+mkdir -p build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
+ENDSSH
+```
+
+#### B.3 创建并修改配置文件
+
+`config/default_config.json` 不在 git 中（gitignored），首次使用需从模板复制：
+
+```bash
+cd /models/screen_system
+cp config/default_config.json.example config/default_config.json
+```
+
+**必须修改的字段**：
+
+```json
+{
+    "mqtt": {
+        "broker": "tcp://<推理端IP>:1883"
+    },
+    "services": {
+        "nn_bridge": { "enabled": false },
+        "check_mosquitto": false
+    }
+}
+```
+
+| 字段 | 值 | 说明 |
+|------|-----|------|
+| `mqtt.broker` | `tcp://<推理端IP>:1883` | **必改**：指向推理端 mosquitto |
+| `services.nn_bridge.enabled` | `false` | 展示端不跑推理桥接，必须显式写 false |
+| `services.check_mosquitto` | `false` | 展示端不检查本地 mosquitto |
+
+> **⚠️ `services` 段必须显式写 `false`，不能删掉。** ConfigManager 的默认值逻辑：当 key 缺失时，`nn_bridge.enabled` 在 `mqtt_subscribe` 模式下默认为 `true`，会试图启动 nn_bridge.py。
+
+> **⚠️ 修改配置后必须重新编译**（`cd build && cmake .. && make -j$(nproc)`），否则 build 目录里的旧配置不会更新。
+
+cameras 数组不需要手动配置 — 系统通过 MQTT discovery 自动发现通道。
+
+#### B.4 运行
+
+```bash
+# rk3578 等 ARM Linux 设备（需要 X11）
+export DISPLAY=:0
+export QT_XCB_GL_INTEGRATION=none
+cd /models/screen_system/build
+./ScreenInferenceSystem          # 纯 MQTT 订阅模式
+./ScreenInferenceSystem -i       # image_stream 模式（MQTT + 图片帧）
+./ScreenInferenceSystem -f       # 全屏
+```
+
+#### B.5 验证
+
+```bash
+ping <推理端IP>                                                     # 网络
+mosquitto_sub -h <推理端IP> -t 'inference/bridge/channels' -v -C 1  # MQTT
+ffprobe rtsp://<推理端IP>:5544/preview/<chid> 2>&1 | grep Stream    # RTSP
+```
+
+启动展示端后按 `Space` 启动所有摄像头。
+
+---
+
+### C. 快速检查清单
+
+- [ ] 推理端和展示端网络互通
+- [ ] 推理端 mosquitto 监听 `0.0.0.0:1883`（`ss -tlnp | grep 1883`）
+- [ ] `bridge_config.json` 的 `preview.host` = 推理端 IP
+- [ ] `default_config.json` 的 `mqtt.broker` = `tcp://推理端IP:1883`
+- [ ] `default_config.json` 的 `services.nn_bridge.enabled` = `false`
+- [ ] 模型文件已拷贝到推理端 `/models/screen_system/model/`
+- [ ] 推理端 nn_bridge 已启动，discovery 消息正常
+- [ ] 展示端能收到 discovery 消息且 RTSP 流可达
+
+#### 常见问题
+
+| 现象 | 原因 | 解决 |
+|------|------|------|
+| MQTT Connection refused | mosquitto 只监听 127.0.0.1 | 加 `listener 1883 0.0.0.0` 配置 |
+| 有框无视频 | RTSP 不通或 `preview.host` 错误 | 检查 `bridge_config.json` 的 preview.host |
+| 有视频无框 | nn_bridge 未运行或 broker 地址错误 | 检查 nn_bridge 日志和 `default_config.json` 的 broker |
+| 通道未发现 | nn_bridge 无数据或 discovery topic 不匹配 | `mosquitto_sub -t '/dposter/200/cmd' -v -C 1` |
+| 改了配置不生效 | build 目录里的旧配置没更新 | 重新 cmake && make |
+| 闪退 | OpenCV FFMPEG 异常 | 检查 RTSP 地址、设备网络稳定性 |
+
+---
+
+### D. 多推理端扩展（2 台 rk3576 + 1 台展示端）
+
+推荐架构：**broker 放在展示端**（方案 B），数据流最直接。
+
+```
+rk3576-A (192.168.77.145)          rk3576-B (192.168.77.146)
+  管 camera 0-3                      管 camera 4-7
+  本地 mosquitto 照常运行             本地 mosquitto 照常运行
+  mqtt_remote.host = 192.168.77.100  mqtt_remote.host = 192.168.77.100
+  preview.host = 192.168.77.145      preview.host = 192.168.77.146
+  client_id = nn_bridge_A            client_id = nn_bridge_B
+          │                                    │
+          └────── MQTT broker ──────────────────┘
+                 展示端 (192.168.77.100)
+                 mosquitto 监听 0.0.0.0:1883
+```
+
+**展示端改动**：
+
+```bash
+# 安装并配置 mosquitto 监听外网
+sudo apt install -y mosquitto
+echo -e "listener 1883 0.0.0.0\nallow_anonymous true" | sudo tee /etc/mosquitto/conf.d/screen_system.conf
+sudo systemctl restart mosquitto
+```
+
+```json
+// default_config.json
+"mqtt": { "broker": "tcp://127.0.0.1:1883" },
+"services": {
+    "nn_bridge": { "enabled": false },
+    "check_mosquitto": true
+}
+```
+
+**推理端改动**（两台各自改 `bridge_config.json`）：
+
+```json
+  // rk3576-A 的 bridge_config.json
+  "mqtt_remote": { "host": "192.168.77.100" },   // 展示端 IP
+  "preview":     { "host": "192.168.77.145" }     // 自己的 IP
+
+  // rk3576-B 的 bridge_config.json
+  "mqtt_remote": { "host": "192.168.77.100" },   // 同一个展示端 IP
+  "preview":     { "host": "192.168.77.146" }     // 自己的 IP
+```
+
+每台推理端的本地 mosquitto（`mqtt_local`）照常 `127.0.0.1`，不受影响——它只管本机 dmg→nn_server→nn_bridge 的内部管道。
+
+---
+
+## 模型导出指南
+
+系统支持 YOLOv5 和 YOLOv8 的 **decoded 格式** ONNX 模型（输出已包含 bbox decode）。不支持 raw 特征图格式。
+
+### YOLOv5 导出
+
+```bash
+python export.py --weights best.pt --include onnx --opset 12
+# 输出 [1, N, 5+numClasses]，每行 cx/cy/w/h/obj_conf/cls...
+```
+
+### YOLOv8 导出
+
+```bash
+yolo export model=best.pt format=onnx opset=12
+# 输出 [1, 4+numClasses, 8400]，无 obj_conf
+```
+
+- 输入分辨率在配置文件中设置（`inputWidth` / `inputHeight`），须与训练/导出时一致
+
+---
+
+## 待完成
+
+- [x] 添加 YOLO ONNX 模型文件到 `models/`
+- [x] 测试摄像头接入（需要 USB 摄像头或 RTSP 流）
+- [ ] 实现 Dashboard 仪表盘视图
+- [ ] 实现 Playback 回放视图
+- [ ] 实现 Snapshot 截图功能
+- [ ] 删除旧版 StatsPanel（确认无引用后）
+
+---
+
+## 附录：WSL2 开发环境
+
+WSL2 作为展示端开发/调试环境。和普通展示端的区别是：源码放在 Windows 下编辑，WSL 下用 `sync.sh` 增量同步编译，省去 scp 步骤。
+
+### 1. 安装依赖
+
+```bash
+sudo apt update
+sudo apt install -y build-essential cmake g++ \
+    qtbase5-dev libqt5widgets5 libopencv-dev \
+    libpaho-mqttpp-dev libpaho-mqtt-dev \
+    fonts-wqy-microhei fonts-wqy-zenhei \
+    mosquitto-clients rsync
+
+which moc  # 必须是 /usr/lib/qt5/bin/moc，不能是 Windows 的
+```
+
+### 2. 创建 sync.sh
+
+```bash
+cat > ~/screen_system/sync.sh << 'EOF'
+#!/bin/bash
+set -e
+SRC=/mnt/d/\!code/screen_system
+DST=~/screen_system
+
+rsync -av --delete \
+    --exclude build/ \
+    --exclude .git/ \
+    --exclude .vscode/ \
+    "$SRC"/ "$DST"/
+
+cd "$DST"
+mkdir -p build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
+echo "Done. Run: cd ~/screen_system/build && ./ScreenInferenceSystem"
+EOF
+chmod +x ~/screen_system/sync.sh
+```
+
+### 3. 首次同步 & 配置
+
+```bash
+cd ~/screen_system
+cp config/default_config.json.example config/default_config.json
+# 编辑 mqtt.broker 指向推理端 IP，services 参考 B.3 节
+./sync.sh
+```
+
+### 4. 运行
+
+```bash
+cd ~/screen_system/build
+./ScreenInferenceSystem          # 纯 MQTT 订阅
+./ScreenInferenceSystem -i       # MQTT + 图片帧
+./ScreenInferenceSystem -f       # 全屏
+```
+
+### WSL DNS 失效
+
+```bash
+# /etc/resolv.conf
+nameserver 223.5.5.5
+nameserver 223.6.6.6
+
+# /etc/wsl.conf
+[network]
+generateResolvConf = false
+```
