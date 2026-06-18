@@ -24,6 +24,19 @@ ImageStreamSource::ImageStreamSource(int cameraId, QObject* parent)
     , mRunning(0)
     , mFrameCount(0)
 {
+    mWatchdogTimer = new QTimer(this);
+    mWatchdogTimer->setTimerType(Qt::VeryCoarseTimer);
+    mWatchdogTimer->setInterval(15000);  // check every 15 s
+    connect(mWatchdogTimer, &QTimer::timeout, this, [this]() {
+        if (mLastFrameTime == 0) return;  // never received a frame yet
+        if (QDateTime::currentMSecsSinceEpoch() - mLastFrameTime > kWatchdogTimeoutMs) {
+            qWarning() << "ImageStreamSource[" << mCameraId
+                       << "]: Watchdog — no frame for" << kWatchdogTimeoutMs / 1000
+                       << "s, resetting connection state";
+            resetConnectionState();
+            mLastFrameTime = QDateTime::currentMSecsSinceEpoch();
+        }
+    });
 }
 
 ImageStreamSource::~ImageStreamSource()
@@ -66,8 +79,13 @@ void ImageStreamSource::startStream()
     mLastFpsTime   = QDateTime::currentMSecsSinceEpoch();
     mFpsFrameCount = 0;
     mFrameCount    = 0;
+    mLastFrameTime = QDateTime::currentMSecsSinceEpoch();
 
-    qDebug() << "ImageStreamSource[" << mCameraId << "]: Started, interval:" << mSnapshotIntervalMs << "ms";
+    if (mWatchdogTimer && !mWatchdogTimer->isActive())
+        mWatchdogTimer->start();
+
+    qDebug() << "ImageStreamSource[" << mCameraId << "]: Started, interval:" << mSnapshotIntervalMs << "ms"
+             << "watchdog:" << kWatchdogTimeoutMs / 1000 << "s";
 }
 
 void ImageStreamSource::stopStream()
@@ -75,6 +93,9 @@ void ImageStreamSource::stopStream()
     mRunning.storeRelaxed(0);
     if (mFetchTimer) {
         mFetchTimer->stop();
+    }
+    if (mWatchdogTimer) {
+        mWatchdogTimer->stop();
     }
     qDebug() << "ImageStreamSource[" << mCameraId << "]: Stopped";
 }
@@ -100,25 +121,36 @@ void ImageStreamSource::fetchOne()
     // Prevent re-entrant calls: if >>frame blocks (timeout up to 5s),
     // the next timer tick would call fetchOne again before we return.
     if (mFetchInProgress) return;
+
+    // RAII guard: even if fetchViaRtsp/fetchViaHttp/fetchViaFile throws
+    // (e.g. std::bad_alloc from cv::Mat after hours of fragmentation),
+    // mFetchInProgress is always cleared.  Without this, a single exception
+    // permanently disables the camera until the user manually restarts.
     mFetchInProgress = true;
-
-    QString url;
-    {
-        QMutexLocker locker(&mMutex);
-        url = mSnapshotUrl;
-    }
-
-    if (!url.isEmpty()) {
-        if (url.startsWith("http://", Qt::CaseInsensitive) ||
-            url.startsWith("https://", Qt::CaseInsensitive)) {
-            fetchViaHttp();
-        } else if (url.startsWith("rtsp://", Qt::CaseInsensitive)) {
-            fetchViaRtsp();
-        } else {
-            fetchViaFile();
+    try {
+        QString url;
+        {
+            QMutexLocker locker(&mMutex);
+            url = mSnapshotUrl;
         }
-    }
 
+        if (!url.isEmpty()) {
+            if (url.startsWith("http://", Qt::CaseInsensitive) ||
+                url.startsWith("https://", Qt::CaseInsensitive)) {
+                fetchViaHttp();
+            } else if (url.startsWith("rtsp://", Qt::CaseInsensitive)) {
+                fetchViaRtsp();
+            } else {
+                fetchViaFile();
+            }
+        }
+    } catch (const std::exception& e) {
+        qWarning() << "ImageStreamSource[" << mCameraId
+                   << "]: Exception in fetch:" << e.what();
+    } catch (...) {
+        qWarning() << "ImageStreamSource[" << mCameraId
+                   << "]: Unknown exception in fetch";
+    }
     mFetchInProgress = false;
 }
 
@@ -225,6 +257,13 @@ void ImageStreamSource::fetchViaRtsp()
         << QStringLiteral("-f") << QStringLiteral("mjpeg")
         << QStringLiteral("-"));
 
+    if (!proc.waitForStarted(2000)) {
+        qWarning() << "ImageStreamSource[" << mCameraId
+                   << "]: ffmpeg failed to start:" << proc.errorString();
+        mRtspFailCount++;
+        return;
+    }
+
     // Cap wait: if ffmpeg reliably fails, backoff already limits retries.
     // A valid RTSP grab typically completes in 2-4s (TCP connect + handshake).
     int timeout = qMin(qMax(5000, mSnapshotIntervalMs * 2), 8000);
@@ -293,6 +332,7 @@ void ImageStreamSource::emitFrame(const cv::Mat& image)
     if (image.empty()) return;
 
     mFrameCount++;
+    mLastFrameTime = QDateTime::currentMSecsSinceEpoch();  // feed the watchdog
 
     FrameData data;
     data.cameraId   = mCameraId;
@@ -312,6 +352,18 @@ void ImageStreamSource::emitFrame(const cv::Mat& image)
         mFpsFrameCount = 0;
         emit fpsUpdated(mCameraId, fps);
     }
+}
+
+void ImageStreamSource::resetConnectionState()
+{
+    // Clear failure counters so the next fetchOne() attempts a fresh
+    // connection instead of staying in permanent backoff.  Called by the
+    // watchdog when no frame has been received for kWatchdogTimeoutMs.
+    mRtspFailCount = 0;
+    mRtspBackoffCounter = 0;
+    mFetchInProgress = false;  // safety: clear stale flag if a previous
+                               // fetch threw an exception
+    qDebug() << "ImageStreamSource[" << mCameraId << "]: Connection state reset";
 }
 
 // ============================================================

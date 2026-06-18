@@ -65,13 +65,24 @@ private:
     int mRtspFailCount = 0;
     int mRtspBackoffCounter = 0;   // ticks since entering backoff, resets on success
 
-    // Guard against re-entrant fetchOne() when >>frame blocks past interval
+    // Guard against re-entrant fetchOne() when >>frame blocks past interval.
+    // Reset via RAII guard so an exception in fetchViaRtsp/fetchViaHttp
+    // won't permanently disable this camera.
     bool mFetchInProgress = false;
+
+    // Watchdog: if no successful frame for kWatchdogTimeoutMs, reset
+    // connection state (clear backoff so the next fetch tries a fresh
+    // connection instead of staying in permanent backoff).
+    static constexpr int kWatchdogTimeoutMs = 120000;  // 2 minutes
+    QTimer* mWatchdogTimer = nullptr;
+    qint64  mLastFrameTime = 0;
 
     // FPS
     qint64 mLastFpsTime = 0;
     int mFpsFrameCount = 0;
     int mFrameCount = 0;
+
+    void resetConnectionState();
 
     mutable QMutex mMutex;
 };

@@ -277,6 +277,18 @@ bool MainWindow::initialize(const QString& configPath, bool forceImageMode)
     }
 
     qDebug() << "MainWindow: Initialized with" << configs.size() << "cameras";
+
+    // In mqtt_subscribe and image_stream modes, auto-start without waiting
+    // for the user to press the Start button.  Channels already configured
+    // with snapshot URLs (image_stream) start immediately; MQTT-discovered
+    // channels auto-start in onChannelsDiscovered once the bridge announces
+    // them and mRunning is true.
+    if (mSystemMode == "mqtt_subscribe" || mSystemMode == "image_stream") {
+        QTimer::singleShot(1500, this, [this]() {
+            if (!mRunning) startAll();
+        });
+    }
+
     return true;
 }
 
