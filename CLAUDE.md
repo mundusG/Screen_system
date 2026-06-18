@@ -96,7 +96,8 @@ screen_system/
 ├── CMakeLists.txt            # CMake 构建文件
 ├── resources.qrc             # Qt 资源文件
 ├── config/
-│   └── default_config.json   # 8路摄像头配置（设置对话框保存到此文件）
+│   ├── default_config.json          # (gitignored) 运行时配置 — 从 .example 复制后修改
+│   └── default_config.json.example  # 配置模板，含 localhost 占位符，可直接入库
 ├── models/                   # YOLO ONNX 模型文件 (待添加)
 └── src/
     ├── Types.h               # BoundingBox, Detection, FrameData 等核心数据结构
@@ -262,6 +263,21 @@ export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v '/mnt/c' | tr '\n' ':')
 mkdir -p ~/screen_system
 cp -r /mnt/d/\!code/screen_system/* ~/screen_system/
 ```
+
+### 2.1. 创建本地配置文件
+
+```bash
+# 首次 clone 后，config/default_config.json 不存在（在 .gitignore 中）
+# 从模板复制一份并编辑：
+cp config/default_config.json.example config/default_config.json
+# 编辑 mqtt.broker 为推理端 IP: tcp://<推理端IP>:1883
+
+# 同理，rk3576 侧的 bridge 配置
+cp rk3576/bridge_config.json.example rk3576/bridge_config.json
+# 编辑 preview.host 为推理端 IP
+```
+
+> **CMake 自动 fallback**: 如果忘记复制配置文件，CMake 会自动使用 `.example` 模板编译（localhost 默认值），不会报错中断。
 
 ### 3. 编译
 

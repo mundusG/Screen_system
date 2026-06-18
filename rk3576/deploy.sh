@@ -46,18 +46,22 @@ tar -czf /tmp/rk3576_deploy.tar.gz \
     m200/*.yaml \
     m200/*.json \
     m200/nn_server/nn_server.conf \
-    db/mpp/*.json \
+    db/mpp/channel.json.example \
     chma/m200/ch*/area.json \
     chma/m200/ch*/freq.json \
     nn_bridge.py \
-    bridge_config.json \
+    bridge_config.json.example \
     test_bridge.py \
     start_inference.sh \
     stop_inference.sh \
     setup_device.sh
 
 scp ${SCP_OPTS} /tmp/rk3576_deploy.tar.gz "${DEVICE_USER}@${DEVICE_IP}:/tmp/"
-ssh ${SSH_OPTS} "${DEVICE_USER}@${DEVICE_IP}" "cd ${REMOTE_DIR}/rk3576 && tar -xzf /tmp/rk3576_deploy.tar.gz && rm /tmp/rk3576_deploy.tar.gz && chmod +x *.sh"
+ssh ${SSH_OPTS} "${DEVICE_USER}@${DEVICE_IP}" "cd ${REMOTE_DIR}/rk3576 && tar -xzf /tmp/rk3576_deploy.tar.gz && rm /tmp/rk3576_deploy.tar.gz && chmod +x *.sh && \
+    for tmpl in bridge_config.json.example db/mpp/channel.json.example; do \
+        real=\${tmpl%.example}; \
+        if [ ! -f \"\$real\" ]; then cp \"\$tmpl\" \"\$real\"; echo \"  Created \$real from template\"; fi; \
+    done"
 rm /tmp/rk3576_deploy.tar.gz
 echo "  配置文件推送完成"
 

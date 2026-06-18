@@ -30,6 +30,7 @@ import json
 import sys
 import time
 import signal
+import threading
 import paho.mqtt.client as mqtt
 from loguru import logger
 
@@ -98,30 +99,38 @@ class NNBridge:
         # chid → display slot mapping (optional, falls back to chid - 1)
         self.channel_map = self.config.get('channel_map', {})
 
+        # Thread-safety: active_channels is read/written by both the
+        # main thread and the paho MQTT callback thread.
+        self._lock = threading.Lock()
+        self._local_needs_reconnect = False
+        self._remote_needs_reconnect = False
+
         # Auto-discovered channels: chid -> channel state
         self.active_channels = {}
         self.discovery_changed = True
 
     def _register_channel(self, chid):
         camera_id = self.channel_map.get(str(chid), chid - 1)
-        self.active_channels[chid] = {
-            'camera_id': camera_id,
-            'publish_topic': f'inference/camera/{camera_id}/detections',
-            'frame_count': 0,
-            'last_seen': time.time(),
-            'stats': ChannelStats(),
-        }
-        self.discovery_changed = True
+        with self._lock:
+            self.active_channels[chid] = {
+                'camera_id': camera_id,
+                'publish_topic': f'inference/camera/{camera_id}/detections',
+                'frame_count': 0,
+                'last_seen': time.time(),
+                'stats': ChannelStats(),
+            }
+            self.discovery_changed = True
         logger.info("Auto-discovered channel chid={} -> camera_id={}", chid, camera_id)
 
     def _check_channel_timeout(self):
         now = time.time()
-        timed_out = [chid for chid, ch in self.active_channels.items()
-                     if now - ch['last_seen'] > self.channel_timeout]
-        for chid in timed_out:
-            logger.info("Channel chid={} timed out, removing", chid)
-            del self.active_channels[chid]
-            self.discovery_changed = True
+        with self._lock:
+            timed_out = [chid for chid, ch in self.active_channels.items()
+                         if now - ch['last_seen'] > self.channel_timeout]
+            for chid in timed_out:
+                logger.info("Channel chid={} timed out, removing", chid)
+                del self.active_channels[chid]
+                self.discovery_changed = True
 
     def start(self):
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -134,11 +143,19 @@ class NNBridge:
         self.local_client.on_connect = self._on_local_connect
         self.local_client.on_message = self._on_local_message
         self.local_client.on_disconnect = self._on_local_disconnect
+        # Prevent unbounded memory growth from internal message queue.
+        # At ~120 msg/s, 2000 slots = ~16 s buffer — enough for any sane
+        # burst without risking OOM kill during a 6+ hour run.
+        self.local_client.max_queued_messages = 2000
 
         client_id = self.config.get('client_id', f"nn_bridge_pub_{int(time.time())}")
         self.remote_client = mqtt.Client(client_id)
         self.remote_client.on_connect = self._on_remote_connect
         self.remote_client.on_disconnect = self._on_remote_disconnect
+        self.remote_client.max_queued_messages = 2000
+        # QoS 0 publishes are fire-and-forget, but cap inflight anyway
+        # so a stalled remote broker can't exhaust memory.
+        self.remote_client.max_inflight_messages_set(100)
 
         lwt_topic = "inference/bridge/status"
         lwt_payload = json.dumps({"status": "offline", "client_id": client_id})
@@ -162,7 +179,8 @@ class NNBridge:
         self.local_client.loop_start()
         self.remote_client.loop_start()
 
-        logger.info("NN Bridge started, geid={}, topic={}, discovery={}, channel_map={}",
+        logger.info("NN Bridge started, geid={}, topic={}, discovery={}, channel_map={}, "
+                     "max_queued=2000",
                      self.geid, self.subscribe_topic, self.discovery_topic,
                      self.channel_map if self.channel_map else "auto(chid-1)")
 
@@ -171,15 +189,23 @@ class NNBridge:
                 time.sleep(self.stats_interval)
                 if not self.running:
                     break
+
+                # Periodic MQTT reconnect (non-blocking — reconnect runs in
+                # the paho network thread via loop_start).
+                self._handle_reconnects()
+
                 self._check_channel_timeout()
                 self._print_stats()
                 if self.discovery_changed:
                     self._publish_discovery()
-                    self.discovery_changed = False
+                    with self._lock:
+                        self.discovery_changed = False
         except KeyboardInterrupt:
             pass
-
-        self._shutdown()
+        except Exception:
+            logger.exception("Fatal error in main loop")
+        finally:
+            self._shutdown()
 
     def _connect_with_retry(self, client, host, port, label):
         delay = 1
@@ -195,30 +221,52 @@ class NNBridge:
                 time.sleep(delay)
                 delay = min(delay * 2, max_delay)
 
+    def _handle_reconnects(self):
+        """Called from main loop to re-establish dropped MQTT connections."""
+        if self._local_needs_reconnect and self.local_client:
+            self._local_needs_reconnect = False
+            logger.info("Attempting local broker reconnect...")
+            try:
+                self.local_client.reconnect()
+            except (ConnectionRefusedError, OSError) as e:
+                logger.warning("Local broker reconnect failed: {}", e)
+                self._local_needs_reconnect = True
+
+        if self._remote_needs_reconnect and self.remote_client:
+            self._remote_needs_reconnect = False
+            logger.info("Attempting remote broker reconnect...")
+            try:
+                self.remote_client.reconnect()
+            except (ConnectionRefusedError, OSError) as e:
+                logger.warning("Remote broker reconnect failed: {}", e)
+                self._remote_needs_reconnect = True
+
     def _signal_handler(self, signum, frame):
         logger.info("Received signal {}, shutting down...", signum)
         self.running = False
 
     def _build_discovery_message(self):
-        channels = []
-        for chid in sorted(self.active_channels):
-            ch = self.active_channels[chid]
-            preview_url = f"rtsp://{self.preview_host}:{self.preview_port}/preview/{chid}"
-            channels.append({
-                'camera_id': ch['camera_id'],
-                'chid': chid,
-                'name': f"camera_{chid}",
-                'preview_url': preview_url,
-                'inference_topic': ch['publish_topic'],
-            })
-        return json.dumps({'channels': channels})
+        with self._lock:
+            channels = []
+            for chid in sorted(self.active_channels):
+                ch = self.active_channels[chid]
+                preview_url = f"rtsp://{self.preview_host}:{self.preview_port}/preview/{chid}"
+                channels.append({
+                    'camera_id': ch['camera_id'],
+                    'chid': chid,
+                    'name': f"camera_{chid}",
+                    'preview_url': preview_url,
+                    'inference_topic': ch['publish_topic'],
+                })
+            count = len(self.active_channels)
+        return json.dumps({'channels': channels}), count
 
     def _publish_discovery(self):
         if not self.remote_client:
             return
-        payload = self._build_discovery_message()
+        payload, count = self._build_discovery_message()
         self.remote_client.publish(self.discovery_topic, payload, qos=1, retain=True)
-        logger.info("Published discovery: {} active channel(s)", len(self.active_channels))
+        logger.info("Published discovery: {} active channel(s)", count)
 
     def _shutdown(self):
         logger.info("Shutting down...")
@@ -251,12 +299,16 @@ class NNBridge:
                          rc, mqtt.connack_string(rc))
             return
         logger.info("Connected to local broker")
+        self._local_needs_reconnect = False
         client.subscribe(self.subscribe_topic)
         logger.info("Subscribed to: {}", self.subscribe_topic)
 
     def _on_local_disconnect(self, client, userdata, rc):
         if rc != 0:
             logger.warning("Local broker disconnected unexpectedly, rc={}", rc)
+            self._local_needs_reconnect = True
+        else:
+            logger.info("Local broker disconnected (clean)")
 
     def _on_remote_connect(self, client, userdata, flags, rc):
         if rc != 0:
@@ -264,10 +316,14 @@ class NNBridge:
                          rc, mqtt.connack_string(rc))
             return
         logger.info("Connected to remote broker")
+        self._remote_needs_reconnect = False
 
     def _on_remote_disconnect(self, client, userdata, rc):
         if rc != 0:
             logger.warning("Remote broker disconnected unexpectedly, rc={}", rc)
+            self._remote_needs_reconnect = True
+        else:
+            logger.info("Remote broker disconnected (clean)")
 
     def _on_local_message(self, client, userdata, msg):
         """Process nn_server detection message and republish in display format."""
@@ -286,24 +342,39 @@ class NNBridge:
         if chid < 0:
             return
 
-        # Auto-register new channel
-        if chid not in self.active_channels:
+        # Auto-register new channel (lock held inside _register_channel)
+        with self._lock:
+            if chid not in self.active_channels:
+                # Must release lock before calling _register_channel to avoid
+                # deadlock (it also acquires _lock), so we register after.
+                need_register = True
+            else:
+                need_register = False
+
+        if need_register:
             self._register_channel(chid)
 
-        ch = self.active_channels[chid]
-        ch['last_seen'] = time.time()
-        camera_id = ch['camera_id']
+        with self._lock:
+            if chid not in self.active_channels:
+                return  # channel was removed between register and now
+            ch = self.active_channels[chid]
+            ch['last_seen'] = time.time()
+            camera_id = ch['camera_id']
 
         # Rate limiting
         if self.rate_limit > 0:
             now = time.time()
             min_interval = 1.0 / self.rate_limit
-            last_time = self.last_publish_time.get(camera_id, 0)
+            with self._lock:
+                last_time = self.last_publish_time.get(camera_id, 0)
             if now - last_time < min_interval:
                 return
-            self.last_publish_time[camera_id] = now
+            with self._lock:
+                self.last_publish_time[camera_id] = now
 
-        ch['frame_count'] += 1
+        with self._lock:
+            ch['frame_count'] += 1
+            frame_count = ch['frame_count']
 
         # Convert nn_output to normalized format
         detections = []
@@ -343,7 +414,7 @@ class NNBridge:
         output_msg = {
             'camera_id': camera_id,
             'timestamp': now_ms,
-            'frame_index': ch['frame_count'],
+            'frame_index': frame_count,
             'normalized': True,
             'detections': detections,
             'inference_time_ms': 0,
@@ -355,21 +426,24 @@ class NNBridge:
         # Record stats
         src_ts = param.get('timestamp', 0)
         latency = (now_ms - src_ts) if src_ts > 0 else 0
-        ch['stats'].record(latency)
+        with self._lock:
+            ch['stats'].record(latency)
 
-        if ch['frame_count'] % 100 == 1:
+        if frame_count % 100 == 1:
             logger.info("cam[{}] chid={} frame={} dets={} topic={}",
-                        camera_id, chid, ch['frame_count'],
+                        camera_id, chid, frame_count,
                         len(detections), pub_topic)
 
     def _print_stats(self):
-        parts = []
-        for chid in sorted(self.active_channels):
-            ch = self.active_channels[chid]
-            s = ch['stats'].report_and_reset()
-            if s['count'] > 0:
-                parts.append(f"ch[{chid}]: {s['count']}msg {s['rate']}msg/s "
-                             f"lat={s['avg_latency_ms']}ms")
+        with self._lock:
+            chids = sorted(self.active_channels)
+            parts = []
+            for chid in chids:
+                ch = self.active_channels[chid]
+                s = ch['stats'].report_and_reset()
+                if s['count'] > 0:
+                    parts.append(f"ch[{chid}]: {s['count']}msg {s['rate']}msg/s "
+                                 f"lat={s['avg_latency_ms']}ms")
         if parts:
             logger.info("Stats | {}", " | ".join(parts))
         else:

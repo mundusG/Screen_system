@@ -84,12 +84,22 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     SCREEN_SYSTEM_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}"
 )
 
-# Copy config file to build directory
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/config/default_config.json
-    ${CMAKE_CURRENT_BINARY_DIR}/config/default_config.json
-    COPYONLY
-)
+# Copy config file to build directory.
+# Falls back to .example template if the real config doesn't exist yet.
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/config/default_config.json)
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/config/default_config.json
+        ${CMAKE_CURRENT_BINARY_DIR}/config/default_config.json
+        COPYONLY
+    )
+else()
+    message(STATUS "config/default_config.json not found, using .example template")
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/config/default_config.json.example
+        ${CMAKE_CURRENT_BINARY_DIR}/config/default_config.json
+        COPYONLY
+    )
+endif()
 
 # Install rules
 install(TARGETS ${PROJECT_NAME} DESTINATION bin)

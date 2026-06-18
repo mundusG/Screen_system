@@ -3,7 +3,7 @@
   "sname": "dmg",
   "sid": 0,
   "param": {
-    "chid": 2,
+    "chid": 0,
     "ip": "127.0.0.1",
     "mode": 0,
     "is_rtd": true,
@@ -18,7 +18,7 @@
     "framerate": 1000,
     "isSrc": false,
     "isCacheSrc": false,
-    "desc": "camera_2",
+    "desc": "camera_0",
     "preview": {
       "enable": true
     },
@@ -26,8 +26,8 @@
       "enable": true,
       "param": {
         "stream": {
-          "url": "rtsp://admin:qs%40123456@169.254.98.43:554/Streaming/Channels/101",
-          "inner_url": "rtsp://127.0.0.1:5544/preview/2"
+          "url": "rtsp://127.0.0.1:554/Streaming/Channels/101",
+          "inner_url": "rtsp://127.0.0.1:5544/preview/0"
         }
       }
     },
@@ -56,5 +56,5 @@
       "after_time": 10
     }
   },
-  "seq": 2
+  "seq": 0
 }
