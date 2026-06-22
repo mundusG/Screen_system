@@ -22,8 +22,8 @@ QT_BEGIN_MOC_NAMESPACE
 QT_WARNING_PUSH
 QT_WARNING_DISABLE_DEPRECATED
 struct qt_meta_stringdata_VideoWidget_t {
-    QByteArrayData data[21];
-    char stringdata0[257];
+    QByteArrayData data[20];
+    char stringdata0[246];
 };
 #define QT_MOC_LITERAL(idx, ofs, len) \
     Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
@@ -39,30 +39,28 @@ QT_MOC_LITERAL(3, 40, 8), // "cameraId"
 QT_MOC_LITERAL(4, 49, 9), // "threshold"
 QT_MOC_LITERAL(5, 59, 7), // "clicked"
 QT_MOC_LITERAL(6, 67, 20), // "defectOverlayPainted"
-QT_MOC_LITERAL(7, 88, 10), // "confidence"
-QT_MOC_LITERAL(8, 99, 18), // "updateDisplayFrame"
-QT_MOC_LITERAL(9, 118, 9), // "FrameData"
-QT_MOC_LITERAL(10, 128, 5), // "frame"
-QT_MOC_LITERAL(11, 134, 22), // "updateDetectionOverlay"
-QT_MOC_LITERAL(12, 157, 13), // "DisplayResult"
-QT_MOC_LITERAL(13, 171, 6), // "result"
-QT_MOC_LITERAL(14, 178, 9), // "updateFps"
-QT_MOC_LITERAL(15, 188, 3), // "fps"
-QT_MOC_LITERAL(16, 192, 19), // "updateInferenceTime"
-QT_MOC_LITERAL(17, 212, 2), // "ms"
-QT_MOC_LITERAL(18, 215, 22), // "setConfidenceThreshold"
-QT_MOC_LITERAL(19, 238, 12), // "showNoSignal"
-QT_MOC_LITERAL(20, 251, 5) // "reset"
+QT_MOC_LITERAL(7, 88, 18), // "updateDisplayFrame"
+QT_MOC_LITERAL(8, 107, 9), // "FrameData"
+QT_MOC_LITERAL(9, 117, 5), // "frame"
+QT_MOC_LITERAL(10, 123, 22), // "updateDetectionOverlay"
+QT_MOC_LITERAL(11, 146, 13), // "DisplayResult"
+QT_MOC_LITERAL(12, 160, 6), // "result"
+QT_MOC_LITERAL(13, 167, 9), // "updateFps"
+QT_MOC_LITERAL(14, 177, 3), // "fps"
+QT_MOC_LITERAL(15, 181, 19), // "updateInferenceTime"
+QT_MOC_LITERAL(16, 201, 2), // "ms"
+QT_MOC_LITERAL(17, 204, 22), // "setConfidenceThreshold"
+QT_MOC_LITERAL(18, 227, 12), // "showNoSignal"
+QT_MOC_LITERAL(19, 240, 5) // "reset"
 
     },
     "VideoWidget\0confidenceThresholdChanged\0"
     "\0cameraId\0threshold\0clicked\0"
-    "defectOverlayPainted\0confidence\0"
-    "updateDisplayFrame\0FrameData\0frame\0"
-    "updateDetectionOverlay\0DisplayResult\0"
-    "result\0updateFps\0fps\0updateInferenceTime\0"
-    "ms\0setConfidenceThreshold\0showNoSignal\0"
-    "reset"
+    "defectOverlayPainted\0updateDisplayFrame\0"
+    "FrameData\0frame\0updateDetectionOverlay\0"
+    "DisplayResult\0result\0updateFps\0fps\0"
+    "updateInferenceTime\0ms\0setConfidenceThreshold\0"
+    "showNoSignal\0reset"
 };
 #undef QT_MOC_LITERAL
 
@@ -82,27 +80,27 @@ static const uint qt_meta_data_VideoWidget[] = {
  // signals: name, argc, parameters, tag, flags
        1,    2,   64,    2, 0x06 /* Public */,
        5,    1,   69,    2, 0x06 /* Public */,
-       6,    2,   72,    2, 0x06 /* Public */,
+       6,    1,   72,    2, 0x06 /* Public */,
 
  // slots: name, argc, parameters, tag, flags
-       8,    1,   77,    2, 0x0a /* Public */,
-      11,    1,   80,    2, 0x0a /* Public */,
-      14,    1,   83,    2, 0x0a /* Public */,
-      16,    1,   86,    2, 0x0a /* Public */,
-      18,    1,   89,    2, 0x0a /* Public */,
-      19,    0,   92,    2, 0x0a /* Public */,
-      20,    0,   93,    2, 0x0a /* Public */,
+       7,    1,   75,    2, 0x0a /* Public */,
+      10,    1,   78,    2, 0x0a /* Public */,
+      13,    1,   81,    2, 0x0a /* Public */,
+      15,    1,   84,    2, 0x0a /* Public */,
+      17,    1,   87,    2, 0x0a /* Public */,
+      18,    0,   90,    2, 0x0a /* Public */,
+      19,    0,   91,    2, 0x0a /* Public */,
 
  // signals: parameters
     QMetaType::Void, QMetaType::Int, QMetaType::Float,    3,    4,
     QMetaType::Void, QMetaType::Int,    3,
-    QMetaType::Void, QMetaType::Int, QMetaType::Float,    3,    7,
+    QMetaType::Void, QMetaType::Int,    3,
 
  // slots: parameters
-    QMetaType::Void, 0x80000000 | 9,   10,
-    QMetaType::Void, 0x80000000 | 12,   13,
-    QMetaType::Void, QMetaType::Double,   15,
-    QMetaType::Void, QMetaType::Float,   17,
+    QMetaType::Void, 0x80000000 | 8,    9,
+    QMetaType::Void, 0x80000000 | 11,   12,
+    QMetaType::Void, QMetaType::Double,   14,
+    QMetaType::Void, QMetaType::Float,   16,
     QMetaType::Void, QMetaType::Float,    4,
     QMetaType::Void,
     QMetaType::Void,
@@ -118,7 +116,7 @@ void VideoWidget::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id,
         switch (_id) {
         case 0: _t->confidenceThresholdChanged((*reinterpret_cast< int(*)>(_a[1])),(*reinterpret_cast< float(*)>(_a[2]))); break;
         case 1: _t->clicked((*reinterpret_cast< int(*)>(_a[1]))); break;
-        case 2: _t->defectOverlayPainted((*reinterpret_cast< int(*)>(_a[1])),(*reinterpret_cast< float(*)>(_a[2]))); break;
+        case 2: _t->defectOverlayPainted((*reinterpret_cast< int(*)>(_a[1]))); break;
         case 3: _t->updateDisplayFrame((*reinterpret_cast< const FrameData(*)>(_a[1]))); break;
         case 4: _t->updateDetectionOverlay((*reinterpret_cast< const DisplayResult(*)>(_a[1]))); break;
         case 5: _t->updateFps((*reinterpret_cast< double(*)>(_a[1]))); break;
@@ -163,7 +161,7 @@ void VideoWidget::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id,
             }
         }
         {
-            using _t = void (VideoWidget::*)(int , float );
+            using _t = void (VideoWidget::*)(int );
             if (*reinterpret_cast<_t *>(_a[1]) == static_cast<_t>(&VideoWidget::defectOverlayPainted)) {
                 *result = 2;
                 return;
@@ -227,9 +225,9 @@ void VideoWidget::clicked(int _t1)
 }
 
 // SIGNAL 2
-void VideoWidget::defectOverlayPainted(int _t1, float _t2)
+void VideoWidget::defectOverlayPainted(int _t1)
 {
-    void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))), const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t2))) };
+    void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))) };
     QMetaObject::activate(this, &staticMetaObject, 2, _a);
 }
 QT_WARNING_POP

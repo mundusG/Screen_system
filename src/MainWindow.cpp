@@ -1002,23 +1002,12 @@ void MainWindow::onDisplayResultReady(const DisplayResult& result)
     }
 }
 
-void MainWindow::onDefectOverlayPainted(int cameraId, float confidence)
+void MainWindow::onDefectOverlayPainted(int cameraId)
 {
     if (!mCameraRunning.value(cameraId, false))
         return;
 
-    float confidenceThreshold = 0.5f;
-    const auto configs = mConfigManager->allConfigs();
-    for (const auto& cfg : configs) {
-        if (cfg.cameraId == cameraId) {
-            confidenceThreshold = cfg.confidenceThreshold;
-            break;
-        }
-    }
-
-    if (confidence >= confidenceThreshold) {
-        triggerDefectAlarm();
-    }
+    triggerDefectAlarm();
 }
 
 void MainWindow::onFpsUpdated(int cameraId, double fps)

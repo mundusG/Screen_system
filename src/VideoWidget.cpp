@@ -200,7 +200,7 @@ void VideoWidget::paintEvent(QPaintEvent*)
         }
     }
 
-    float renderedDefectConfidence = -1.0f;
+    bool renderedDefect = false;
 
     // Draw detection boxes (works for both video and NO SIGNAL)
     {
@@ -220,7 +220,7 @@ void VideoWidget::paintEvent(QPaintEvent*)
             if (det.filtered) continue;
 
             if (det.classId == 1) {
-                renderedDefectConfidence = qMax(renderedDefectConfidence, det.confidence);
+                renderedDefect = true;
             }
 
             float bx, by, bw, bh;
@@ -281,11 +281,11 @@ void VideoWidget::paintEvent(QPaintEvent*)
 
     if (mAlarmAfterNextPaint) {
         mAlarmAfterNextPaint = false;
-        if (renderedDefectConfidence >= 0.0f) {
+        if (renderedDefect) {
             // Defer until this paint event has returned so Qt can submit the
             // completed red defect box before audio playback is requested.
-            QTimer::singleShot(0, this, [this, renderedDefectConfidence]() {
-                emit defectOverlayPainted(mCameraId, renderedDefectConfidence);
+            QTimer::singleShot(0, this, [this]() {
+                emit defectOverlayPainted(mCameraId);
             });
         }
     }
