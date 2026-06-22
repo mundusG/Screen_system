@@ -100,6 +100,7 @@ struct CameraConfig {
 /// Multiple sources let one display subscribe to independent inference systems.
 struct MqttSourceConfig {
     QString id;
+    bool    enabled = true;
     QString broker;
     QString clientId;
     QString username;

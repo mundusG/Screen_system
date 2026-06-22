@@ -151,6 +151,8 @@ void MainWindow::setupUI()
                 this, &MainWindow::onConfidenceThresholdChanged);
         connect(videoWidget, &VideoWidget::clicked,
                 this, &MainWindow::onCameraClicked);
+        connect(videoWidget, &VideoWidget::defectOverlayPainted,
+                this, &MainWindow::onDefectOverlayPainted);
     }
 
     // Set initial selection
@@ -241,6 +243,11 @@ bool MainWindow::initialize(const QString& configPath, bool forceImageMode)
     if (mSystemMode == "mqtt_subscribe" || mSystemMode == "image_stream") {
         const auto mqttSources = mConfigManager->mqttSources();
         for (const auto& source : mqttSources) {
+            if (!source.enabled) {
+                qDebug() << "MainWindow: MQTT source disabled:" << source.id;
+                continue;
+            }
+
             auto* subscriber = new InferenceSubscriberThread(this);
             subscriber->setDiscoveryTopic(source.discoveryTopic);
             mInferenceSubscribers[source.id] = subscriber;
@@ -936,32 +943,22 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
         mVideoWidgets[camId]->updateInferenceTime(result.inferenceTimeMs);
     }
 
-    float confidenceThreshold = 0.5f;
     QString camName;
     auto configs = mConfigManager->allConfigs();
     for (const auto& cfg : configs) {
         if (cfg.cameraId == camId) {
-            confidenceThreshold = cfg.confidenceThreshold;
             camName = cfg.name;
             break;
         }
     }
 
-    bool defectDetected = false;
     float bestConf = 0.0f;
     int bestClassId = -1;
     for (const auto& det : result.detections) {
-        if (det.classId == 1 && det.confidence >= confidenceThreshold) {
-            defectDetected = true;
-        }
         if (det.confidence > bestConf) {
             bestConf = det.confidence;
             bestClassId = det.classId;
         }
-    }
-
-    if (defectDetected) {
-        triggerDefectAlarm();
     }
 
     if (bestConf >= 0.6f && camId < mVideoWidgets.size()) {
@@ -1002,6 +999,25 @@ void MainWindow::onDisplayResultReady(const DisplayResult& result)
         mVideoWidgets[camId]->updateDetectionOverlay(result);
     } else {
         qWarning() << "MainWindow::onDisplayResultReady: Invalid camera ID" << camId;
+    }
+}
+
+void MainWindow::onDefectOverlayPainted(int cameraId, float confidence)
+{
+    if (!mCameraRunning.value(cameraId, false))
+        return;
+
+    float confidenceThreshold = 0.5f;
+    const auto configs = mConfigManager->allConfigs();
+    for (const auto& cfg : configs) {
+        if (cfg.cameraId == cameraId) {
+            confidenceThreshold = cfg.confidenceThreshold;
+            break;
+        }
+    }
+
+    if (confidence >= confidenceThreshold) {
+        triggerDefectAlarm();
     }
 }
 

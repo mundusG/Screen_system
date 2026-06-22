@@ -52,6 +52,7 @@ bool ConfigManager::loadFromFile(const QString& filePath)
         const QJsonObject sourceObj = mqttSourcesArray[i].toObject();
         MqttSourceConfig source;
         source.id = sourceObj["id"].toString(QString("mqtt_source_%1").arg(i + 1));
+        source.enabled = sourceObj["enabled"].toBool(true);
         source.broker = sourceObj["broker"].toString();
         source.clientId = sourceObj["client_id"].toString();
         source.username = sourceObj["username"].toString();
@@ -60,8 +61,8 @@ bool ConfigManager::loadFromFile(const QString& filePath)
         source.cameraIdMin = sourceObj["camera_id_min"].toInt(0);
         source.cameraIdMax = sourceObj["camera_id_max"].toInt(7);
 
-        if (source.broker.isEmpty() || source.clientId.isEmpty()
-            || source.cameraIdMin > source.cameraIdMax) {
+        if (source.cameraIdMin > source.cameraIdMax
+            || (source.enabled && (source.broker.isEmpty() || source.clientId.isEmpty()))) {
             qWarning() << "ConfigManager: Ignoring invalid MQTT source" << source.id;
             continue;
         }

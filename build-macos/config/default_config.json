@@ -3,16 +3,14 @@
         "name": "大屏推理显示系统",
         "version": "1.0.0",
         "maxCameras": 8,
-        "displayLayout": {
-            "rows": 2,
-            "cols": 4
-        },
+        "displayLayout": { "rows": 2, "cols": 4 },
         "mode": "mqtt_subscribe"
     },
     "mqtt_sources": [
         {
             "id": "cameras_1_4",
-            "broker": "tcp://127.0.0.1:1883",
+            "enabled": true,
+            "broker": "tcp://192.168.1.110:1883",
             "client_id": "display_cameras_1_4",
             "username": "",
             "password": "",
@@ -22,7 +20,8 @@
         },
         {
             "id": "cameras_5_8",
-            "broker": "tcp://127.0.0.1:1884",
+            "enabled": false,
+            "broker": "",
             "client_id": "display_cameras_5_8",
             "username": "",
             "password": "",
@@ -32,142 +31,8 @@
         }
     ],
     "services": {
-        "nn_bridge": {
-            "enabled": false,
-            "script": "rk3576/nn_bridge.py",
-            "config": "rk3576/bridge_config.json",
-            "python": "python3"
-        },
-        "check_mosquitto": true
+        "nn_bridge": { "enabled": false },
+        "check_mosquitto": false
     },
-    "cameras": [
-        {
-            "cameraId": 0,
-            "name": "摄像头 1",
-            "source": "rtsp://127.0.0.1:554/Streaming/Channels/101",
-            "enabled": true,
-            "mode": "mqtt_subscribe",
-            "mqtt_topic": "inference/camera/0/detections",
-            "confidenceThreshold": 0.5,
-            "smoothingAlpha": 0.3,
-            "trackMaxLost": 5,
-            "inferenceIntervalMs": 1000,
-            "classColors": {
-                "0": "#00FF00",
-                "1": "#FF0000"
-            }
-        },
-        {
-            "cameraId": 1,
-            "name": "摄像头 2",
-            "source": "1",
-            "enabled": true,
-            "mode": "mqtt_subscribe",
-            "mqtt_topic": "inference/camera/1/detections",
-            "confidenceThreshold": 0.5,
-            "smoothingAlpha": 0.3,
-            "trackMaxLost": 5,
-            "inferenceIntervalMs": 1000,
-            "classColors": {
-                "0": "#00FF00",
-                "1": "#FF0000"
-            }
-        },
-        {
-            "cameraId": 2,
-            "name": "摄像头 3",
-            "source": "2",
-            "enabled": true,
-            "mode": "mqtt_subscribe",
-            "mqtt_topic": "inference/camera/2/detections",
-            "confidenceThreshold": 0.5,
-            "smoothingAlpha": 0.3,
-            "trackMaxLost": 5,
-            "inferenceIntervalMs": 1000,
-            "classColors": {
-                "0": "#00FF00",
-                "1": "#FF0000"
-            }
-        },
-        {
-            "cameraId": 3,
-            "name": "摄像头 4",
-            "source": "3",
-            "enabled": true,
-            "mode": "mqtt_subscribe",
-            "mqtt_topic": "inference/camera/3/detections",
-            "confidenceThreshold": 0.5,
-            "smoothingAlpha": 0.3,
-            "trackMaxLost": 5,
-            "inferenceIntervalMs": 1000,
-            "classColors": {
-                "0": "#00FF00",
-                "1": "#FF0000"
-            }
-        },
-        {
-            "cameraId": 4,
-            "name": "摄像头 5",
-            "source": "4",
-            "enabled": true,
-            "mode": "mqtt_subscribe",
-            "mqtt_topic": "inference/camera/4/detections",
-            "confidenceThreshold": 0.5,
-            "smoothingAlpha": 0.3,
-            "trackMaxLost": 5,
-            "inferenceIntervalMs": 1000,
-            "classColors": {
-                "0": "#00FF00",
-                "1": "#FF0000"
-            }
-        },
-        {
-            "cameraId": 5,
-            "name": "摄像头 6",
-            "source": "5",
-            "enabled": true,
-            "mode": "mqtt_subscribe",
-            "mqtt_topic": "inference/camera/5/detections",
-            "confidenceThreshold": 0.5,
-            "smoothingAlpha": 0.3,
-            "trackMaxLost": 5,
-            "inferenceIntervalMs": 1000,
-            "classColors": {
-                "0": "#00FF00",
-                "1": "#FF0000"
-            }
-        },
-        {
-            "cameraId": 6,
-            "name": "摄像头 7",
-            "source": "6",
-            "enabled": true,
-            "mode": "mqtt_subscribe",
-            "mqtt_topic": "inference/camera/6/detections",
-            "confidenceThreshold": 0.5,
-            "smoothingAlpha": 0.3,
-            "trackMaxLost": 5,
-            "inferenceIntervalMs": 1000,
-            "classColors": {
-                "0": "#00FF00",
-                "1": "#FF0000"
-            }
-        },
-        {
-            "cameraId": 7,
-            "name": "摄像头 8",
-            "source": "7",
-            "enabled": true,
-            "mode": "mqtt_subscribe",
-            "mqtt_topic": "inference/camera/7/detections",
-            "confidenceThreshold": 0.5,
-            "smoothingAlpha": 0.3,
-            "trackMaxLost": 5,
-            "inferenceIntervalMs": 1000,
-            "classColors": {
-                "0": "#00FF00",
-                "1": "#FF0000"
-            }
-        }
-    ]
+    "cameras": []
 }

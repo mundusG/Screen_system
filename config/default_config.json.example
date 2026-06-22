@@ -12,6 +12,7 @@
     "mqtt_sources": [
         {
             "id": "cameras_1_4",
+            "enabled": true,
             "broker": "tcp://127.0.0.1:1883",
             "client_id": "display_cameras_1_4",
             "username": "",
@@ -22,6 +23,7 @@
         },
         {
             "id": "cameras_5_8",
+            "enabled": false,
             "broker": "tcp://127.0.0.1:1884",
             "client_id": "display_cameras_5_8",
             "username": "",

@@ -60,6 +60,7 @@ void SmoothingFilter::processInferenceResult(const InferenceResult& result)
         // Apply EMA smoothing on the displacement between frames
         BoundingBox smoothed = smoothBBox(det.bbox, track.smoothedBBox);
 
+        track.classId           = det.classId;
         track.smoothedBBox       = smoothed;
         track.rawBBox            = det.bbox;
         track.confidence         = det.confidence;
@@ -88,6 +89,9 @@ void SmoothingFilter::processInferenceResult(const InferenceResult& result)
         newTrack.normalized       = det.normalized;
 
         mTracks[newTrackId] = newTrack;
+        // A track created from this frame is active immediately. Without
+        // this, the lost-track pass below deactivates it before display.
+        matchedTrackIds.insert(newTrackId);
     }
 
     // Update lost-frame counters for unmatched tracks
