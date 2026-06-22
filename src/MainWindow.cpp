@@ -151,8 +151,6 @@ void MainWindow::setupUI()
                 this, &MainWindow::onConfidenceThresholdChanged);
         connect(videoWidget, &VideoWidget::clicked,
                 this, &MainWindow::onCameraClicked);
-        connect(videoWidget, &VideoWidget::defectOverlayPainted,
-                this, &MainWindow::onDefectOverlayPainted);
     }
 
     // Set initial selection
@@ -954,11 +952,21 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
 
     float bestConf = 0.0f;
     int bestClassId = -1;
+    bool hasDefect = false;
     for (const auto& det : result.detections) {
+        if (det.classId == 1) {
+            hasDefect = true;
+        }
         if (det.confidence > bestConf) {
             bestConf = det.confidence;
             bestClassId = det.classId;
         }
+    }
+
+    // One inference result containing any class-1 detection requests one
+    // global alarm. triggerDefectAlarm() enforces the shared 10-second cooldown.
+    if (hasDefect) {
+        triggerDefectAlarm();
     }
 
     if (bestConf >= 0.6f && camId < mVideoWidgets.size()) {
@@ -1000,14 +1008,6 @@ void MainWindow::onDisplayResultReady(const DisplayResult& result)
     } else {
         qWarning() << "MainWindow::onDisplayResultReady: Invalid camera ID" << camId;
     }
-}
-
-void MainWindow::onDefectOverlayPainted(int cameraId)
-{
-    if (!mCameraRunning.value(cameraId, false))
-        return;
-
-    triggerDefectAlarm();
 }
 
 void MainWindow::onFpsUpdated(int cameraId, double fps)

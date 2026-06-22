@@ -53,7 +53,6 @@ private slots:
     void onInferenceFrameReady(const FrameData& frame);
     void onInferenceFinished(const InferenceResult& result);
     void onDisplayResultReady(const DisplayResult& result);
-    void onDefectOverlayPainted(int cameraId);
     void onFpsUpdated(int cameraId, double fps);
     void onCameraError(const QString& message);
     void onCameraClicked(int cameraId);

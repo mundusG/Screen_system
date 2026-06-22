@@ -30,8 +30,6 @@ public:
 signals:
     void confidenceThresholdChanged(int cameraId, float threshold);
     void clicked(int cameraId);
-    /// Emitted after a class-1 detection box has been drawn in paintEvent.
-    void defectOverlayPainted(int cameraId);
 
 public slots:
     void updateDisplayFrame(const FrameData& frame);
@@ -78,7 +76,6 @@ private:
     bool    mHasSignal              = false;
     bool    mHasDetections          = false;
     int     mDetectionCount         = 0;
-    bool    mAlarmAfterNextPaint    = false;
 
     QTimer* mTickTimer = nullptr;
     float   mLivePulse = 1.0f;

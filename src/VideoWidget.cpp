@@ -93,20 +93,10 @@ void VideoWidget::updateDisplayFrame(const FrameData& frame)
 
 void VideoWidget::updateDetectionOverlay(const DisplayResult& result)
 {
-    bool hasDefect = false;
     {
         QMutexLocker locker(&mDetectionMutex);
         mDetections = result.detections;
-        for (const auto& det : mDetections) {
-            if (!det.filtered && det.classId == 1) {
-                hasDefect = true;
-                break;
-            }
-        }
     }
-    // The actual alarm is emitted from paintEvent, after this overlay has
-    // been rendered. A later result without a defect cancels the pending one.
-    mAlarmAfterNextPaint = hasDefect;
     mLastDetectionTime = QDateTime::currentMSecsSinceEpoch();
     mHasDetections = !result.detections.isEmpty();
 
@@ -141,7 +131,6 @@ void VideoWidget::reset()
     mCurrentFps = 0.0;
     mCurrentInferenceTimeMs = 0.0f;
     mDetectionCount = 0;
-    mAlarmAfterNextPaint = false;
     {
         QMutexLocker locker(&mFrameMutex);
         mCurrentFrame.release();
@@ -200,8 +189,6 @@ void VideoWidget::paintEvent(QPaintEvent*)
         }
     }
 
-    bool renderedDefect = false;
-
     // Draw detection boxes (works for both video and NO SIGNAL)
     {
         QMutexLocker locker(&mFrameMutex);
@@ -218,10 +205,6 @@ void VideoWidget::paintEvent(QPaintEvent*)
 
         for (const auto& det : mDetections) {
             if (det.filtered) continue;
-
-            if (det.classId == 1) {
-                renderedDefect = true;
-            }
 
             float bx, by, bw, bh;
             if (det.normalized) {
@@ -278,17 +261,6 @@ void VideoWidget::paintEvent(QPaintEvent*)
     drawTimestamp(painter, videoRect);
     drawStatusOverlay(painter, videoRect);
     drawBorder(painter, videoRect);
-
-    if (mAlarmAfterNextPaint) {
-        mAlarmAfterNextPaint = false;
-        if (renderedDefect) {
-            // Defer until this paint event has returned so Qt can submit the
-            // completed red defect box before audio playback is requested.
-            QTimer::singleShot(0, this, [this]() {
-                emit defectOverlayPainted(mCameraId);
-            });
-        }
-    }
 }
 
 void VideoWidget::drawLiveIndicator(QPainter& p, const QRect& videoRect)
