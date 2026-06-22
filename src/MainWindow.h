@@ -24,6 +24,7 @@ class AlertPanel;
 class InferenceSubscriberThread;
 class ServiceLauncher;
 class AlarmController;
+class ThreadedSoundPlayer;
 
 class MainWindow : public QMainWindow
 {
@@ -90,6 +91,7 @@ private:
     QMap<QString, InferenceSubscriberThread*> mInferenceSubscribers;
     ServiceLauncher* mServiceLauncher;
     AlarmController* mAlarmController;
+    ThreadedSoundPlayer* mThreadedSoundPlayer;
 
     bool    mRunning;
     qint64  mStartTime;

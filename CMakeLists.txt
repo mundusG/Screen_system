@@ -36,6 +36,7 @@ set(SOURCES
     src/InferencePublisher.cpp
     src/ServiceLauncher.cpp
     src/AlarmController.cpp
+    src/ThreadedSoundPlayer.cpp
 )
 
 set(HEADERS
@@ -58,6 +59,7 @@ set(HEADERS
     src/InferencePublisher.h
     src/ServiceLauncher.h
     src/AlarmController.h
+    src/ThreadedSoundPlayer.h
 )
 
 # Qt resources

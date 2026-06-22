@@ -12,6 +12,7 @@
 #include "InferenceSubscriber.h"
 #include "ServiceLauncher.h"
 #include "AlarmController.h"
+#include "ThreadedSoundPlayer.h"
 #include "Theme.h"
 
 #include <QVBoxLayout>
@@ -31,6 +32,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QCoreApplication>
+#include <QPushButton>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -46,6 +48,7 @@ MainWindow::MainWindow(QWidget* parent)
     , mConfigManager(new ConfigManager(this))
     , mServiceLauncher(new ServiceLauncher(this))
     , mAlarmController(new AlarmController(this))
+    , mThreadedSoundPlayer(new ThreadedSoundPlayer(this))
     , mRunning(false)
     , mStartTime(0)
     , mSelectedCamera(0)
@@ -162,6 +165,13 @@ void MainWindow::setupUI()
     connect(mBottomBar, &BottomControlBar::settingsRequested, this, &MainWindow::openSettings);
     connect(mBottomBar, &BottomControlBar::snapshotRequested, this, &MainWindow::onSnapshotRequested);
     mCenterLayout->addWidget(mBottomBar);
+
+    // Test button: starts a worker thread that relays a play request back to
+    // the main-thread QSoundEffect (same path used on class-1 detection).
+    QPushButton* testSoundButton = new QPushButton(QStringLiteral("测试声音"), mCenterContainer);
+    connect(testSoundButton, &QPushButton::clicked,
+            this, [this]() { mThreadedSoundPlayer->trigger(); });
+    mCenterLayout->addWidget(testSoundButton);
 
     mRootLayout->addWidget(mCenterContainer, 1); // stretch = 1 (takes remaining space)
 
@@ -960,7 +970,10 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
     // request. AlarmController serializes playback and enforces the global
     // 10-second cooldown across all cameras.
     if (hasDefect) {
-        mAlarmController->requestAlarm();
+        // mAlarmController->requestAlarm();
+        // Independent QThread-relay player (coexists with AlarmController):
+        // one worker thread per frame that contains any class-1 detection.
+        mThreadedSoundPlayer->trigger();
     }
 
     if (bestConf >= 0.6f && camId < mVideoWidgets.size()) {
