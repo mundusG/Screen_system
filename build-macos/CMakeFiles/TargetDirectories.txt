@@ -1,0 +1,9 @@
+/Users/young/Desktop/Kinth/Screen_system/build-macos/CMakeFiles/ScreenInferenceSystem.dir
+/Users/young/Desktop/Kinth/Screen_system/build-macos/CMakeFiles/edit_cache.dir
+/Users/young/Desktop/Kinth/Screen_system/build-macos/CMakeFiles/rebuild_cache.dir
+/Users/young/Desktop/Kinth/Screen_system/build-macos/CMakeFiles/list_install_components.dir
+/Users/young/Desktop/Kinth/Screen_system/build-macos/CMakeFiles/install.dir
+/Users/young/Desktop/Kinth/Screen_system/build-macos/CMakeFiles/install/local.dir
+/Users/young/Desktop/Kinth/Screen_system/build-macos/CMakeFiles/install/strip.dir
+/Users/young/Desktop/Kinth/Screen_system/build-macos/CMakeFiles/ScreenInferenceSystem_autogen_timestamp_deps.dir
+/Users/young/Desktop/Kinth/Screen_system/build-macos/CMakeFiles/ScreenInferenceSystem_autogen.dir

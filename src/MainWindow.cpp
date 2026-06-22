@@ -30,6 +30,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QCoreApplication>
+#include <QSoundEffect>
+#include <QUrl>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -43,14 +45,20 @@ MainWindow::MainWindow(QWidget* parent)
     , mBottomBar(nullptr)
     , mAlertPanel(nullptr)
     , mConfigManager(new ConfigManager(this))
-    , mInferenceSubscriber(nullptr)
     , mServiceLauncher(new ServiceLauncher(this))
+    , mAlarmSound(new QSoundEffect(this))
     , mRunning(false)
     , mStartTime(0)
     , mSelectedCamera(0)
     , mGridMode(2) // 2x4 default
     , mSystemMode("local_inference")
 {
+    // QSoundEffect uses the operating system's default audio output device.
+    // This lets HDMI TVs, USB speakers, and Bluetooth devices work without
+    // application-specific device configuration.
+    mAlarmSound->setSource(QUrl(QStringLiteral("qrc:/sounds/defect_alarm.wav")));
+    mAlarmSound->setVolume(0.85f);
+
     setupUI();
 
     mStatusTimer = new QTimer(this);
@@ -227,29 +235,58 @@ bool MainWindow::initialize(const QString& configPath, bool forceImageMode)
         }
     }
 
-    // Initialize MQTT subscriber for mqtt_subscribe and image_stream modes
+    // Initialize one MQTT subscriber per configured source. Each source owns
+    // a disjoint global camera ID range, so two inference systems can feed the
+    // same display without their camera IDs or subscriptions being mixed.
     if (mSystemMode == "mqtt_subscribe" || mSystemMode == "image_stream") {
-        mInferenceSubscriber = new InferenceSubscriberThread(this);
-        mInferenceSubscriber->setDiscoveryTopic(mConfigManager->discoveryTopic());
+        const auto mqttSources = mConfigManager->mqttSources();
+        for (const auto& source : mqttSources) {
+            auto* subscriber = new InferenceSubscriberThread(this);
+            subscriber->setDiscoveryTopic(source.discoveryTopic);
+            mInferenceSubscribers[source.id] = subscriber;
 
-        connect(mInferenceSubscriber, &InferenceSubscriberThread::inferenceFinished,
-                this, &MainWindow::onInferenceFinished);
-        connect(mInferenceSubscriber, &InferenceSubscriberThread::channelsDiscovered,
-                this, &MainWindow::onChannelsDiscovered);
-        connect(mInferenceSubscriber, &InferenceSubscriberThread::error,
-                this, &MainWindow::onCameraError);
+            connect(subscriber, &InferenceSubscriberThread::inferenceFinished,
+                    this, [this, source](const InferenceResult& result) {
+                if (!source.acceptsCamera(result.cameraId)) {
+                    qWarning() << "MainWindow: Ignoring camera" << result.cameraId
+                               << "from MQTT source" << source.id
+                               << "(allowed range:" << source.cameraIdMin
+                               << "-" << source.cameraIdMax << ")";
+                    return;
+                }
+                onInferenceFinished(result);
+            });
+            connect(subscriber, &InferenceSubscriberThread::channelsDiscovered,
+                    this, [this, source](const QVector<ChannelInfo>& channels) {
+                QVector<ChannelInfo> accepted;
+                accepted.reserve(channels.size());
+                for (const auto& channel : channels) {
+                    if (source.acceptsCamera(channel.cameraId)) {
+                        accepted.append(channel);
+                    } else {
+                        qWarning() << "MainWindow: Ignoring discovered camera" << channel.cameraId
+                                   << "from MQTT source" << source.id
+                                   << "(allowed range:" << source.cameraIdMin
+                                   << "-" << source.cameraIdMax << ")";
+                    }
+                }
+                if (!accepted.isEmpty()) {
+                    onChannelsDiscovered(accepted, source.id);
+                }
+            });
+            connect(subscriber, &InferenceSubscriberThread::error,
+                    this, [this, source](const QString& message) {
+                onCameraError(QString("MQTT source %1: %2").arg(source.id, message));
+            });
 
-        // Connect to MQTT broker; discovery topic is auto-subscribed,
-        // inference topics will be added dynamically when channels are discovered
-        QTimer::singleShot(0, this, [this]() {
-            mInferenceSubscriber->connectAndSubscribe(
-                mConfigManager->mqttBroker(),
-                mConfigManager->mqttClientId(),
-                QStringList(),
-                mConfigManager->mqttUsername(),
-                mConfigManager->mqttPassword()
-            );
-        });
+            // Discovery is subscribed immediately; inference topics are added
+            // dynamically after each source announces its own channels.
+            QTimer::singleShot(0, this, [subscriber, source]() {
+                subscriber->connectAndSubscribe(
+                    source.broker, source.clientId, QStringList(),
+                    source.username, source.password);
+            });
+        }
     }
 
     auto configs = mConfigManager->allConfigs();
@@ -779,9 +816,11 @@ void MainWindow::onSnapshotRequested()
 // Pipeline signal handlers
 // ================================================================
 
-void MainWindow::onChannelsDiscovered(const QVector<ChannelInfo>& channels)
+void MainWindow::onChannelsDiscovered(const QVector<ChannelInfo>& channels,
+                                      const QString& mqttSourceId)
 {
-    qDebug() << "MainWindow: Discovered" << channels.size() << "channel(s) from bridge";
+    qDebug() << "MainWindow: Discovered" << channels.size() << "channel(s) from MQTT source"
+             << mqttSourceId;
 
     bool pipelinesCreated = false;
     for (const auto& ch : channels) {
@@ -820,8 +859,8 @@ void MainWindow::onChannelsDiscovered(const QVector<ChannelInfo>& channels)
         pipelinesCreated = true;
 
         // Subscribe to inference topic
-        if (mInferenceSubscriber && !ch.inferenceTopic.isEmpty())
-            mInferenceSubscriber->subscribeTopic(ch.inferenceTopic);
+        if (mInferenceSubscribers.contains(mqttSourceId) && !ch.inferenceTopic.isEmpty())
+            mInferenceSubscribers[mqttSourceId]->subscribeTopic(ch.inferenceTopic);
 
         qDebug() << "MainWindow: Channel" << ch.cameraId
                  << "name:" << ch.name
@@ -897,25 +936,59 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
         mVideoWidgets[camId]->updateInferenceTime(result.inferenceTimeMs);
     }
 
+    float confidenceThreshold = 0.5f;
+    QString camName;
+    auto configs = mConfigManager->allConfigs();
+    for (const auto& cfg : configs) {
+        if (cfg.cameraId == camId) {
+            confidenceThreshold = cfg.confidenceThreshold;
+            camName = cfg.name;
+            break;
+        }
+    }
+
+    bool defectDetected = false;
     float bestConf = 0.0f;
     int bestClassId = -1;
     for (const auto& det : result.detections) {
+        if (det.classId == 1 && det.confidence >= confidenceThreshold) {
+            defectDetected = true;
+        }
         if (det.confidence > bestConf) {
             bestConf = det.confidence;
             bestClassId = det.classId;
         }
     }
+
+    if (defectDetected) {
+        triggerDefectAlarm();
+    }
+
     if (bestConf >= 0.6f && camId < mVideoWidgets.size()) {
         QImage thumbnail = mVideoWidgets[camId]->grabThumbnail(100);
-        QString camName;
-        auto configs = mConfigManager->allConfigs();
-        for (const auto& cfg : configs) {
-            if (cfg.cameraId == camId) { camName = cfg.name; break; }
-        }
         if (camName.isEmpty() && mChannelInfos.contains(camId))
             camName = mChannelInfos[camId].name;
         mAlertPanel->addAlert(camId, camName, bestClassId, bestConf, thumbnail);
     }
+}
+
+void MainWindow::triggerDefectAlarm()
+{
+    constexpr qint64 AlarmCooldownMs = 10 * 1000;
+
+    if (mAlarmCooldownTimer.isValid()
+        && mAlarmCooldownTimer.elapsed() < AlarmCooldownMs) {
+        return;
+    }
+
+    if (mAlarmSound->status() == QSoundEffect::Error) {
+        qWarning() << "MainWindow: Unable to play defect alarm:" << mAlarmSound->source();
+        return;
+    }
+
+    mAlarmSound->play();
+    mAlarmCooldownTimer.start();
+    qDebug() << "MainWindow: Defect alarm played; global 10-second cooldown started";
 }
 
 void MainWindow::onDisplayResultReady(const DisplayResult& result)

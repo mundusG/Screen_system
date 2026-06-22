@@ -9,6 +9,7 @@
 #include <QMap>
 #include <QLabel>
 #include <QTimer>
+#include <QElapsedTimer>
 #include "Types.h"
 
 class VideoWidget;
@@ -23,6 +24,7 @@ class BottomControlBar;
 class AlertPanel;
 class InferenceSubscriberThread;
 class ServiceLauncher;
+class QSoundEffect;
 
 class MainWindow : public QMainWindow
 {
@@ -57,7 +59,7 @@ private slots:
     void onGridModeChanged(int mode);
     void onToggleFullscreen();
     void onSnapshotRequested();
-    void onChannelsDiscovered(const QVector<ChannelInfo>& channels);
+    void onChannelsDiscovered(const QVector<ChannelInfo>& channels, const QString& mqttSourceId);
 
 private:
     void setupUI();
@@ -66,6 +68,7 @@ private:
     void updatePanels();
     void applyGridLayout(int mode);
     void constrainVideoAspectRatios();
+    void triggerDefectAlarm();
 
     // UI - main structure
     QWidget*            mCentralWidget;
@@ -87,8 +90,9 @@ private:
     QMap<int, SmoothingFilter*>   mSmoothingFilters;
 
     ConfigManager* mConfigManager;
-    InferenceSubscriberThread* mInferenceSubscriber;
+    QMap<QString, InferenceSubscriberThread*> mInferenceSubscribers;
     ServiceLauncher* mServiceLauncher;
+    QSoundEffect* mAlarmSound;
 
     bool    mRunning;
     qint64  mStartTime;
@@ -99,6 +103,7 @@ private:
     QMap<int, bool> mCameraRunning;
     QMap<int, ChannelInfo> mChannelInfos;
     QString mSystemMode; // "local_inference", "mqtt_publish", "mqtt_subscribe"
+    QElapsedTimer mAlarmCooldownTimer;
 };
 
 #endif // MAINWINDOW_H

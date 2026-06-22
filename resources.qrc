@@ -1,4 +1,6 @@
 <!DOCTYPE RCC>
 <RCC version="1.0">
-  <qresource prefix="/"/>
+  <qresource prefix="/">
+    <file alias="sounds/defect_alarm.wav">resources/defect_alarm.wav</file>
+  </qresource>
 </RCC>

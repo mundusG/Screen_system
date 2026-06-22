@@ -78,6 +78,11 @@ public:
     /// MQTT discovery topic for channel auto-discovery
     QString discoveryTopic() const;
 
+    /// MQTT broker sources and their allowed global camera ID ranges.
+    /// If the config does not define mqtt_sources, this returns one source
+    /// synthesized from the legacy mqtt object for backward compatibility.
+    QVector<MqttSourceConfig> mqttSources() const;
+
     /// Resolve config file path by searching standard locations
     static QString resolveConfigPath();
 
@@ -103,6 +108,7 @@ private:
     QString mMqttClientId;
     QString mMqttUsername;
     QString mMqttPassword;
+    QVector<MqttSourceConfig> mMqttSources;
 
     bool    mBridgeEnabled = false;
     QString mBridgeScript = "rk3576/nn_bridge.py";

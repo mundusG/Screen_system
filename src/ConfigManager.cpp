@@ -44,6 +44,41 @@ bool ConfigManager::loadFromFile(const QString& filePath)
     QString mqttClientId = mqttObj["client_id"].toString();
     QString mqttUsername = mqttObj["username"].toString();
     QString mqttPassword = mqttObj["password"].toString();
+    QString discoveryTopic = mqttObj["discovery_topic"].toString("inference/bridge/+/channels");
+
+    QVector<MqttSourceConfig> mqttSources;
+    const QJsonArray mqttSourcesArray = root["mqtt_sources"].toArray();
+    for (int i = 0; i < mqttSourcesArray.size(); ++i) {
+        const QJsonObject sourceObj = mqttSourcesArray[i].toObject();
+        MqttSourceConfig source;
+        source.id = sourceObj["id"].toString(QString("mqtt_source_%1").arg(i + 1));
+        source.broker = sourceObj["broker"].toString();
+        source.clientId = sourceObj["client_id"].toString();
+        source.username = sourceObj["username"].toString();
+        source.password = sourceObj["password"].toString();
+        source.discoveryTopic = sourceObj["discovery_topic"].toString(discoveryTopic);
+        source.cameraIdMin = sourceObj["camera_id_min"].toInt(0);
+        source.cameraIdMax = sourceObj["camera_id_max"].toInt(7);
+
+        if (source.broker.isEmpty() || source.clientId.isEmpty()
+            || source.cameraIdMin > source.cameraIdMax) {
+            qWarning() << "ConfigManager: Ignoring invalid MQTT source" << source.id;
+            continue;
+        }
+        mqttSources.append(source);
+    }
+
+    // Keep existing single-broker configurations operational.
+    if (mqttSources.isEmpty()) {
+        MqttSourceConfig source;
+        source.id = QStringLiteral("legacy");
+        source.broker = mqttBroker;
+        source.clientId = mqttClientId;
+        source.username = mqttUsername;
+        source.password = mqttPassword;
+        source.discoveryTopic = discoveryTopic;
+        mqttSources.append(source);
+    }
 
     QJsonArray cameras = root["cameras"].toArray();
 
@@ -54,6 +89,7 @@ bool ConfigManager::loadFromFile(const QString& filePath)
     mMqttClientId = mqttClientId;
     mMqttUsername = mqttUsername;
     mMqttPassword = mqttPassword;
+    mMqttSources = mqttSources;
 
     // Read services settings
     QJsonObject servicesObj = root["services"].toObject();
@@ -65,14 +101,15 @@ bool ConfigManager::loadFromFile(const QString& filePath)
     mCheckMosquitto = servicesObj["check_mosquitto"].toBool(true);
 
     // Read discovery topic
-    mDiscoveryTopic = mqttObj["discovery_topic"].toString("inference/bridge/+/channels");
+    mDiscoveryTopic = discoveryTopic;
 
     for (int i = 0; i < cameras.size(); ++i) {
         QJsonObject camObj = cameras[i].toObject();
         mConfigs.append(parseCameraJson(camObj, i));
     }
 
-    qDebug() << "ConfigManager: Loaded" << mConfigs.size() << "camera configs, mode:" << systemMode;
+    qDebug() << "ConfigManager: Loaded" << mConfigs.size() << "camera configs, mode:" << systemMode
+             << "MQTT sources:" << mMqttSources.size();
     emit allConfigsChanged();
     return true;
 }
@@ -300,6 +337,12 @@ QString ConfigManager::discoveryTopic() const
 {
     QMutexLocker locker(&mMutex);
     return mDiscoveryTopic;
+}
+
+QVector<MqttSourceConfig> ConfigManager::mqttSources() const
+{
+    QMutexLocker locker(&mMutex);
+    return mMqttSources;
 }
 
 QString ConfigManager::resolveConfigPath()

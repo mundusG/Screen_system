@@ -8,7 +8,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Find Qt5
-find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui Network)
+find_package(Qt5 REQUIRED COMPONENTS Widgets Core Gui Network Multimedia)
 
 # Find OpenCV
 find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio dnn)
@@ -70,6 +70,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt5::Core
     Qt5::Gui
     Qt5::Network
+    Qt5::Multimedia
     ${OpenCV_LIBS}
     PahoMqttCpp::paho-mqttpp3
 )

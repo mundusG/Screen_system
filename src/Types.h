@@ -96,6 +96,23 @@ struct CameraConfig {
     }
 };
 
+/// One MQTT broker connection and the global camera IDs it is allowed to serve.
+/// Multiple sources let one display subscribe to independent inference systems.
+struct MqttSourceConfig {
+    QString id;
+    QString broker;
+    QString clientId;
+    QString username;
+    QString password;
+    QString discoveryTopic;
+    int     cameraIdMin = 0;
+    int     cameraIdMax = 7;
+
+    bool acceptsCamera(int cameraId) const {
+        return cameraId >= cameraIdMin && cameraId <= cameraIdMax;
+    }
+};
+
 /// Frame with metadata passed between pipeline stages
 struct FrameData {
     int         cameraId = 0;
