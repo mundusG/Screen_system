@@ -771,7 +771,6 @@
   /opt/homebrew/Cellar/opencv/4.13.0_12/include/opencv4/opencv2/core/version.hpp \
   /opt/homebrew/Cellar/opencv/4.13.0_12/include/opencv4/opencv2/core/vsx_utils.hpp \
   /opt/homebrew/Cellar/opencv/4.13.0_12/include/opencv4/opencv2/opencv_modules.hpp \
-  /opt/homebrew/Cellar/qt@5/5.15.19/lib/QtCore.framework/Versions/5/Headers/QElapsedTimer \
   /opt/homebrew/Cellar/qt@5/5.15.19/lib/QtCore.framework/Versions/5/Headers/QMap \
   /opt/homebrew/Cellar/qt@5/5.15.19/lib/QtCore.framework/Versions/5/Headers/QMetaType \
   /opt/homebrew/Cellar/qt@5/5.15.19/lib/QtCore.framework/Versions/5/Headers/QPointF \
@@ -792,7 +791,6 @@
   /opt/homebrew/Cellar/qt@5/5.15.19/lib/QtCore.framework/Versions/5/Headers/qcontainerfwd.h \
   /opt/homebrew/Cellar/qt@5/5.15.19/lib/QtCore.framework/Versions/5/Headers/qcontainertools_impl.h \
   /opt/homebrew/Cellar/qt@5/5.15.19/lib/QtCore.framework/Versions/5/Headers/qdatastream.h \
-  /opt/homebrew/Cellar/qt@5/5.15.19/lib/QtCore.framework/Versions/5/Headers/qelapsedtimer.h \
   /opt/homebrew/Cellar/qt@5/5.15.19/lib/QtCore.framework/Versions/5/Headers/qflags.h \
   /opt/homebrew/Cellar/qt@5/5.15.19/lib/QtCore.framework/Versions/5/Headers/qglobal.h \
   /opt/homebrew/Cellar/qt@5/5.15.19/lib/QtCore.framework/Versions/5/Headers/qglobalstatic.h \

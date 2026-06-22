@@ -784,6 +784,8 @@ ScreenInferenceSystem_autogen/timestamp: /Library/Developer/CommandLineTools/SDK
   /Users/young/Desktop/Kinth/Screen_system/config/default_config.json \
   /Users/young/Desktop/Kinth/Screen_system/main.cpp \
   /Users/young/Desktop/Kinth/Screen_system/resources.qrc \
+  /Users/young/Desktop/Kinth/Screen_system/src/AlarmController.cpp \
+  /Users/young/Desktop/Kinth/Screen_system/src/AlarmController.h \
   /Users/young/Desktop/Kinth/Screen_system/src/AlertPanel.cpp \
   /Users/young/Desktop/Kinth/Screen_system/src/AlertPanel.h \
   /Users/young/Desktop/Kinth/Screen_system/src/BottomControlBar.cpp \
@@ -19343,11 +19345,7 @@ ScreenInferenceSystem_autogen/UVLADIE3JM/moc_AlertPanel.cpp:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__type_traits/aligned_storage.h:
 
-/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/algorithm:
-
-/opt/homebrew/opt/qt@5/lib/cmake/Qt5Multimedia/Qt5MultimediaConfigVersion.cmake:
-
-/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__type_traits/add_rvalue_reference.h:
+/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__type_traits/add_pointer.h:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__iterator/readable_traits.h:
 
@@ -19538,8 +19536,6 @@ ScreenInferenceSystem_autogen/UVLADIE3JM/moc_AlertPanel.cpp:
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__iterator/ostreambuf_iterator.h:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__iterator/ostream_iterator.h:
-
-/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__type_traits/add_pointer.h:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__iterator/move_sentinel.h:
 
@@ -20219,6 +20215,12 @@ ScreenInferenceSystem_autogen/UVLADIE3JM/moc_ServiceLauncher.cpp:
 
 /opt/homebrew/opt/qt@5/lib/cmake/Qt5Multimedia/Qt5Multimedia_AVFServicePlugin.cmake:
 
+/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/algorithm:
+
+/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__type_traits/add_rvalue_reference.h:
+
+/opt/homebrew/opt/qt@5/lib/cmake/Qt5Multimedia/Qt5MultimediaConfigVersion.cmake:
+
 /Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/c++/v1/__cxx03/__algorithm/remove.h:
 
 /opt/homebrew/share/cmake/Modules/Platform/Linker/Apple-AppleClang-CXX.cmake:
@@ -20725,22 +20727,6 @@ ScreenInferenceSystem_autogen/UVLADIE3JM/moc_SidebarWidget.cpp:
 
 /Users/young/Desktop/Kinth/Screen_system/src/InferenceSubscriber.cpp:
 
-/opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qsharedpointer.h:
-
-/private/tmp/paho-mqtt-cpp/include/mqtt/subscribe_options.h:
-
-/opt/homebrew/lib/cmake/opencv4/OpenCVConfig.cmake:
-
-/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/half_positive.h:
-
-/Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/sys/_types/_fd_set.h:
-
-/Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/sys/_pthread/_pthread_t.h:
-
-/Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/c++/v1/__cxx03/__type_traits/is_nothrow_assignable.h:
-
-/Users/young/Desktop/Kinth/Screen_system/src/InferencePublisher.h:
-
 /opt/homebrew/Cellar/qt@5/5.15.19/lib/QtCore.framework/Versions/5/Headers/qtextstream.h:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/c++/v1/__cxx03/__chrono/convert_to_timespec.h:
@@ -21003,6 +20989,12 @@ CMakeFiles/4.3.3/CMakeSystem.cmake:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/c++/v1/stddef.h:
 
+/Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/sys/_pthread/_pthread_t.h:
+
+/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/half_positive.h:
+
+/Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/sys/_types/_fd_set.h:
+
 /Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/c++/v1/sstream:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/c++/v1/__cxx03/__iterator/front_insert_iterator.h:
@@ -21106,6 +21098,8 @@ ScreenInferenceSystem_autogen/UVLADIE3JM/moc_MQTTClient.cpp:
 /Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/c++/v1/complex:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/c++/v1/cmath:
+
+/Users/young/Desktop/Kinth/Screen_system/src/AlarmController.cpp:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/c++/v1/climits:
 
@@ -21502,6 +21496,10 @@ ScreenInferenceSystem_autogen/UVLADIE3JM/moc_CameraCapture.cpp:
 /Users/young/Desktop/Kinth/Screen_system/src/MQTTClient.cpp:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/c++/v1/__cxx03/__thread/poll_with_backoff.h:
+
+/Users/young/Desktop/Kinth/Screen_system/src/InferencePublisher.h:
+
+/Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/c++/v1/__cxx03/__type_traits/is_nothrow_assignable.h:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__algorithm/remove_copy_if.h:
 
@@ -22195,6 +22193,8 @@ ScreenInferenceSystem_autogen/UVLADIE3JM/moc_CameraCapture.cpp:
 
 /private/tmp/paho-mqtt-cpp/lib/cmake/PahoMqttCpp/PahoMqttCppTargets-noconfig.cmake:
 
+/Users/young/Desktop/Kinth/Screen_system/src/AlarmController.h:
+
 /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__fwd/subrange.h:
 
 /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/Headers/qmenubar.h:
@@ -22344,6 +22344,12 @@ ScreenInferenceSystem_autogen/UVLADIE3JM/moc_CameraCapture.cpp:
 /opt/homebrew/Cellar/opencv/4.13.0_12/include/opencv4/opencv2/core/cvstd.inl.hpp:
 
 /Library/Developer/CommandLineTools/SDKs/MacOSX26.2.sdk/usr/include/c++/v1/__cxx03/__condition_variable/condition_variable.h:
+
+/opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qsharedpointer.h:
+
+/private/tmp/paho-mqtt-cpp/include/mqtt/subscribe_options.h:
+
+/opt/homebrew/lib/cmake/opencv4/OpenCVConfig.cmake:
 
 /Users/young/Desktop/Kinth/Screen_system/src/ConfigManager.h:
 

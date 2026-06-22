@@ -785,6 +785,8 @@
  /Users/young/Desktop/Kinth/Screen_system/config/default_config.json
  /Users/young/Desktop/Kinth/Screen_system/main.cpp
  /Users/young/Desktop/Kinth/Screen_system/resources.qrc
+ /Users/young/Desktop/Kinth/Screen_system/src/AlarmController.cpp
+ /Users/young/Desktop/Kinth/Screen_system/src/AlarmController.h
  /Users/young/Desktop/Kinth/Screen_system/src/AlertPanel.cpp
  /Users/young/Desktop/Kinth/Screen_system/src/AlertPanel.h
  /Users/young/Desktop/Kinth/Screen_system/src/BottomControlBar.cpp

@@ -926,8 +926,6 @@ CMakeFiles/ScreenInferenceSystem.dir/main.cpp.o: \
   /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/Headers/QLabel \
   /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/Headers/qlabel.h \
   /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/Headers/qframe.h \
-  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QElapsedTimer \
-  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qelapsedtimer.h \
   /Users/young/Desktop/Kinth/Screen_system/src/Types.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QString \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QRectF \

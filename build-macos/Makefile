@@ -272,6 +272,30 @@ main.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ScreenInferenceSystem.dir/build.make CMakeFiles/ScreenInferenceSystem.dir/main.cpp.s
 .PHONY : main.cpp.s
 
+src/AlarmController.o: src/AlarmController.cpp.o
+.PHONY : src/AlarmController.o
+
+# target to build an object file
+src/AlarmController.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ScreenInferenceSystem.dir/build.make CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.o
+.PHONY : src/AlarmController.cpp.o
+
+src/AlarmController.i: src/AlarmController.cpp.i
+.PHONY : src/AlarmController.i
+
+# target to preprocess a source file
+src/AlarmController.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ScreenInferenceSystem.dir/build.make CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.i
+.PHONY : src/AlarmController.cpp.i
+
+src/AlarmController.s: src/AlarmController.cpp.s
+.PHONY : src/AlarmController.s
+
+# target to generate assembly for a file
+src/AlarmController.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ScreenInferenceSystem.dir/build.make CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.s
+.PHONY : src/AlarmController.cpp.s
+
 src/AlertPanel.o: src/AlertPanel.cpp.o
 .PHONY : src/AlertPanel.o
 
@@ -680,6 +704,9 @@ help:
 	@echo "... main.o"
 	@echo "... main.i"
 	@echo "... main.s"
+	@echo "... src/AlarmController.o"
+	@echo "... src/AlarmController.i"
+	@echo "... src/AlarmController.s"
 	@echo "... src/AlertPanel.o"
 	@echo "... src/AlertPanel.i"
 	@echo "... src/AlertPanel.s"

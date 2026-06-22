@@ -11,6 +11,7 @@
 #include "SettingsDialog.h"
 #include "InferenceSubscriber.h"
 #include "ServiceLauncher.h"
+#include "AlarmController.h"
 #include "Theme.h"
 
 #include <QVBoxLayout>
@@ -30,8 +31,6 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QCoreApplication>
-#include <QSoundEffect>
-#include <QUrl>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -46,19 +45,13 @@ MainWindow::MainWindow(QWidget* parent)
     , mAlertPanel(nullptr)
     , mConfigManager(new ConfigManager(this))
     , mServiceLauncher(new ServiceLauncher(this))
-    , mAlarmSound(new QSoundEffect(this))
+    , mAlarmController(new AlarmController(this))
     , mRunning(false)
     , mStartTime(0)
     , mSelectedCamera(0)
     , mGridMode(2) // 2x4 default
     , mSystemMode("local_inference")
 {
-    // QSoundEffect uses the operating system's default audio output device.
-    // This lets HDMI TVs, USB speakers, and Bluetooth devices work without
-    // application-specific device configuration.
-    mAlarmSound->setSource(QUrl(QStringLiteral("qrc:/sounds/defect_alarm.wav")));
-    mAlarmSound->setVolume(0.85f);
-
     setupUI();
 
     mStatusTimer = new QTimer(this);
@@ -963,10 +956,11 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
         }
     }
 
-    // One inference result containing any class-1 detection requests one
-    // global alarm. triggerDefectAlarm() enforces the shared 10-second cooldown.
+    // One inference result containing any class-1 detection creates one
+    // request. AlarmController serializes playback and enforces the global
+    // 10-second cooldown across all cameras.
     if (hasDefect) {
-        triggerDefectAlarm();
+        mAlarmController->requestAlarm();
     }
 
     if (bestConf >= 0.6f && camId < mVideoWidgets.size()) {
@@ -975,25 +969,6 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
             camName = mChannelInfos[camId].name;
         mAlertPanel->addAlert(camId, camName, bestClassId, bestConf, thumbnail);
     }
-}
-
-void MainWindow::triggerDefectAlarm()
-{
-    constexpr qint64 AlarmCooldownMs = 10 * 1000;
-
-    if (mAlarmCooldownTimer.isValid()
-        && mAlarmCooldownTimer.elapsed() < AlarmCooldownMs) {
-        return;
-    }
-
-    if (mAlarmSound->status() == QSoundEffect::Error) {
-        qWarning() << "MainWindow: Unable to play defect alarm:" << mAlarmSound->source();
-        return;
-    }
-
-    mAlarmSound->play();
-    mAlarmCooldownTimer.start();
-    qDebug() << "MainWindow: Defect alarm played; global 10-second cooldown started";
 }
 
 void MainWindow::onDisplayResultReady(const DisplayResult& result)

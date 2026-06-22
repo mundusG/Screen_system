@@ -9,7 +9,6 @@
 #include <QMap>
 #include <QLabel>
 #include <QTimer>
-#include <QElapsedTimer>
 #include "Types.h"
 
 class VideoWidget;
@@ -24,7 +23,7 @@ class BottomControlBar;
 class AlertPanel;
 class InferenceSubscriberThread;
 class ServiceLauncher;
-class QSoundEffect;
+class AlarmController;
 
 class MainWindow : public QMainWindow
 {
@@ -68,8 +67,6 @@ private:
     void updatePanels();
     void applyGridLayout(int mode);
     void constrainVideoAspectRatios();
-    void triggerDefectAlarm();
-
     // UI - main structure
     QWidget*            mCentralWidget;
     QHBoxLayout*        mRootLayout;
@@ -92,7 +89,7 @@ private:
     ConfigManager* mConfigManager;
     QMap<QString, InferenceSubscriberThread*> mInferenceSubscribers;
     ServiceLauncher* mServiceLauncher;
-    QSoundEffect* mAlarmSound;
+    AlarmController* mAlarmController;
 
     bool    mRunning;
     qint64  mStartTime;
@@ -103,7 +100,6 @@ private:
     QMap<int, bool> mCameraRunning;
     QMap<int, ChannelInfo> mChannelInfos;
     QString mSystemMode; // "local_inference", "mqtt_publish", "mqtt_subscribe"
-    QElapsedTimer mAlarmCooldownTimer;
 };
 
 #endif // MAINWINDOW_H

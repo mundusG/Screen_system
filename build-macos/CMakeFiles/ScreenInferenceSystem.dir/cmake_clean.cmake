@@ -8,6 +8,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/mocs_compilation.cpp.o.d"
   "CMakeFiles/ScreenInferenceSystem.dir/main.cpp.o"
   "CMakeFiles/ScreenInferenceSystem.dir/main.cpp.o.d"
+  "CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.o"
+  "CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.o.d"
   "CMakeFiles/ScreenInferenceSystem.dir/src/AlertPanel.cpp.o"
   "CMakeFiles/ScreenInferenceSystem.dir/src/AlertPanel.cpp.o.d"
   "CMakeFiles/ScreenInferenceSystem.dir/src/BottomControlBar.cpp.o"

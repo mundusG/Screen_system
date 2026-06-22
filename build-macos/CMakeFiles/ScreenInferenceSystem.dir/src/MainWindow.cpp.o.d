@@ -903,8 +903,6 @@ CMakeFiles/ScreenInferenceSystem.dir/src/MainWindow.cpp.o: \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QTimer \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qtimer.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qbasictimer.h \
-  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QElapsedTimer \
-  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qelapsedtimer.h \
   /Users/young/Desktop/Kinth/Screen_system/src/Types.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QString \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QRectF \
@@ -978,6 +976,7 @@ CMakeFiles/ScreenInferenceSystem.dir/src/MainWindow.cpp.o: \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QThread \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qthread.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qdeadlinetimer.h \
+  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qelapsedtimer.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/future \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__thread/thread.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/thread \
@@ -1084,6 +1083,8 @@ CMakeFiles/ScreenInferenceSystem.dir/src/MainWindow.cpp.o: \
   /Users/young/Desktop/Kinth/Screen_system/src/ServiceLauncher.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QProcess \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qprocess.h \
+  /Users/young/Desktop/Kinth/Screen_system/src/AlarmController.h \
+  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QElapsedTimer \
   /Users/young/Desktop/Kinth/Screen_system/src/Theme.h \
   /opt/homebrew/opt/qt@5/lib/QtGui.framework/Headers/QKeyEvent \
   /opt/homebrew/opt/qt@5/lib/QtGui.framework/Headers/qevent.h \
@@ -1115,9 +1116,4 @@ CMakeFiles/ScreenInferenceSystem.dir/src/MainWindow.cpp.o: \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qfileinfo.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QFile \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QFileInfo \
-  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QCoreApplication \
-  /opt/homebrew/opt/qt@5/lib/QtMultimedia.framework/Headers/QSoundEffect \
-  /opt/homebrew/opt/qt@5/lib/QtMultimedia.framework/Headers/qsoundeffect.h \
-  /opt/homebrew/opt/qt@5/lib/QtMultimedia.framework/Headers/qtmultimediaglobal.h \
-  /opt/homebrew/opt/qt@5/lib/QtMultimedia.framework/Headers/qtmultimedia-config.h \
-  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QUrl
+  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QCoreApplication

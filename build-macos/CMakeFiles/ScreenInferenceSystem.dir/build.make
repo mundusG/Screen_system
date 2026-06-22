@@ -339,10 +339,24 @@ CMakeFiles/ScreenInferenceSystem.dir/src/ServiceLauncher.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ScreenInferenceSystem.dir/src/ServiceLauncher.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/young/Desktop/Kinth/Screen_system/src/ServiceLauncher.cpp -o CMakeFiles/ScreenInferenceSystem.dir/src/ServiceLauncher.cpp.s
 
+CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.o: CMakeFiles/ScreenInferenceSystem.dir/flags.make
+CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.o: /Users/young/Desktop/Kinth/Screen_system/src/AlarmController.cpp
+CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.o: CMakeFiles/ScreenInferenceSystem.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/young/Desktop/Kinth/Screen_system/build-macos/CMakeFiles --progress-num=$(CMAKE_PROGRESS_21) "Building CXX object CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.o -MF CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.o.d -o CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.o -c /Users/young/Desktop/Kinth/Screen_system/src/AlarmController.cpp
+
+CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /Users/young/Desktop/Kinth/Screen_system/src/AlarmController.cpp > CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.i
+
+CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /Users/young/Desktop/Kinth/Screen_system/src/AlarmController.cpp -o CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.s
+
 CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/EWIEGA46WW/qrc_resources.cpp.o: CMakeFiles/ScreenInferenceSystem.dir/flags.make
 CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/EWIEGA46WW/qrc_resources.cpp.o: ScreenInferenceSystem_autogen/EWIEGA46WW/qrc_resources.cpp
 CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/EWIEGA46WW/qrc_resources.cpp.o: CMakeFiles/ScreenInferenceSystem.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/young/Desktop/Kinth/Screen_system/build-macos/CMakeFiles --progress-num=$(CMAKE_PROGRESS_21) "Building CXX object CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/EWIEGA46WW/qrc_resources.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/Users/young/Desktop/Kinth/Screen_system/build-macos/CMakeFiles --progress-num=$(CMAKE_PROGRESS_22) "Building CXX object CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/EWIEGA46WW/qrc_resources.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/EWIEGA46WW/qrc_resources.cpp.o -MF CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/EWIEGA46WW/qrc_resources.cpp.o.d -o CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/EWIEGA46WW/qrc_resources.cpp.o -c /Users/young/Desktop/Kinth/Screen_system/build-macos/ScreenInferenceSystem_autogen/EWIEGA46WW/qrc_resources.cpp
 
 CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/EWIEGA46WW/qrc_resources.cpp.i: cmake_force
@@ -373,6 +387,7 @@ ScreenInferenceSystem_OBJECTS = \
 "CMakeFiles/ScreenInferenceSystem.dir/src/InferenceSubscriber.cpp.o" \
 "CMakeFiles/ScreenInferenceSystem.dir/src/InferencePublisher.cpp.o" \
 "CMakeFiles/ScreenInferenceSystem.dir/src/ServiceLauncher.cpp.o" \
+"CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.o" \
 "CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/EWIEGA46WW/qrc_resources.cpp.o"
 
 # External object files for target ScreenInferenceSystem
@@ -396,6 +411,7 @@ ScreenInferenceSystem: CMakeFiles/ScreenInferenceSystem.dir/src/MQTTClient.cpp.o
 ScreenInferenceSystem: CMakeFiles/ScreenInferenceSystem.dir/src/InferenceSubscriber.cpp.o
 ScreenInferenceSystem: CMakeFiles/ScreenInferenceSystem.dir/src/InferencePublisher.cpp.o
 ScreenInferenceSystem: CMakeFiles/ScreenInferenceSystem.dir/src/ServiceLauncher.cpp.o
+ScreenInferenceSystem: CMakeFiles/ScreenInferenceSystem.dir/src/AlarmController.cpp.o
 ScreenInferenceSystem: CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/EWIEGA46WW/qrc_resources.cpp.o
 ScreenInferenceSystem: CMakeFiles/ScreenInferenceSystem.dir/build.make
 ScreenInferenceSystem: /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/QtWidgets
@@ -411,7 +427,7 @@ ScreenInferenceSystem: /opt/homebrew/lib/libopencv_imgproc.4.13.0.dylib
 ScreenInferenceSystem: /opt/homebrew/lib/libopencv_core.4.13.0.dylib
 ScreenInferenceSystem: /opt/homebrew/lib/libpaho-mqtt3a.1.3.16.dylib
 ScreenInferenceSystem: CMakeFiles/ScreenInferenceSystem.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/Users/young/Desktop/Kinth/Screen_system/build-macos/CMakeFiles --progress-num=$(CMAKE_PROGRESS_22) "Linking CXX executable ScreenInferenceSystem"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/Users/young/Desktop/Kinth/Screen_system/build-macos/CMakeFiles --progress-num=$(CMAKE_PROGRESS_23) "Linking CXX executable ScreenInferenceSystem"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/ScreenInferenceSystem.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

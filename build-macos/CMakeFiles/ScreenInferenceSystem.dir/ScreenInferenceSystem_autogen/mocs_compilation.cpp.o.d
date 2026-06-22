@@ -1,6 +1,6 @@
 CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/mocs_compilation.cpp.o: \
   /Users/young/Desktop/Kinth/Screen_system/build-macos/ScreenInferenceSystem_autogen/mocs_compilation.cpp \
-  /Users/young/Desktop/Kinth/Screen_system/build-macos/ScreenInferenceSystem_autogen/UVLADIE3JM/moc_AlertPanel.cpp \
+  /Users/young/Desktop/Kinth/Screen_system/build-macos/ScreenInferenceSystem_autogen/UVLADIE3JM/moc_AlarmController.cpp \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/memory \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__config \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__config_site \
@@ -545,11 +545,11 @@ CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/mocs_compilat
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__utility/forward_like.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__variant/monostate.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/stdexcept \
-  /Users/young/Desktop/Kinth/Screen_system/build-macos/ScreenInferenceSystem_autogen/UVLADIE3JM/../../../src/AlertPanel.h \
-  /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/Headers/QWidget \
-  /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/Headers/qwidget.h \
-  /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/Headers/qtwidgetsglobal.h \
-  /opt/homebrew/opt/qt@5/lib/QtGui.framework/Headers/qtguiglobal.h \
+  /Users/young/Desktop/Kinth/Screen_system/build-macos/ScreenInferenceSystem_autogen/UVLADIE3JM/../../../src/AlarmController.h \
+  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QObject \
+  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qobject.h \
+  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qobjectdefs.h \
+  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qnamespace.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qglobal.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/assert.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/_static_assert.h \
@@ -806,13 +806,7 @@ CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/mocs_compilat
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/cstdarg \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qnumeric.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qversiontagging.h \
-  /opt/homebrew/opt/qt@5/lib/QtGui.framework/Headers/qtgui-config.h \
-  /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/Headers/qtwidgets-config.h \
-  /opt/homebrew/opt/qt@5/lib/QtGui.framework/Headers/qwindowdefs.h \
-  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qobjectdefs.h \
-  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qnamespace.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qobjectdefs_impl.h \
-  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qobject.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qstring.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qchar.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qbytearray.h \
@@ -855,6 +849,17 @@ CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/mocs_compilat
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/map \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__tree \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qobject_impl.h \
+  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QElapsedTimer \
+  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qelapsedtimer.h \
+  /Users/young/Desktop/Kinth/Screen_system/build-macos/ScreenInferenceSystem_autogen/UVLADIE3JM/moc_AlertPanel.cpp \
+  /Users/young/Desktop/Kinth/Screen_system/build-macos/ScreenInferenceSystem_autogen/UVLADIE3JM/../../../src/AlertPanel.h \
+  /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/Headers/QWidget \
+  /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/Headers/qwidget.h \
+  /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/Headers/qtwidgetsglobal.h \
+  /opt/homebrew/opt/qt@5/lib/QtGui.framework/Headers/qtguiglobal.h \
+  /opt/homebrew/opt/qt@5/lib/QtGui.framework/Headers/qtgui-config.h \
+  /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/Headers/qtwidgets-config.h \
+  /opt/homebrew/opt/qt@5/lib/QtGui.framework/Headers/qwindowdefs.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qmargins.h \
   /opt/homebrew/opt/qt@5/lib/QtGui.framework/Headers/qpaintdevice.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qrect.h \
@@ -898,11 +903,9 @@ CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/mocs_compilat
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qbasictimer.h \
   /Users/young/Desktop/Kinth/Screen_system/build-macos/ScreenInferenceSystem_autogen/UVLADIE3JM/moc_CameraCapture.cpp \
   /Users/young/Desktop/Kinth/Screen_system/build-macos/ScreenInferenceSystem_autogen/UVLADIE3JM/../../../src/CameraCapture.h \
-  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QObject \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QThread \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qthread.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qdeadlinetimer.h \
-  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/qelapsedtimer.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/future \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/__thread/thread.h \
   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/c++/v1/sstream \
@@ -1067,7 +1070,6 @@ CMakeFiles/ScreenInferenceSystem.dir/ScreenInferenceSystem_autogen/mocs_compilat
   /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/Headers/QLabel \
   /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/Headers/qlabel.h \
   /opt/homebrew/opt/qt@5/lib/QtWidgets.framework/Headers/qframe.h \
-  /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QElapsedTimer \
   /Users/young/Desktop/Kinth/Screen_system/build-macos/ScreenInferenceSystem_autogen/UVLADIE3JM/moc_ServiceLauncher.cpp \
   /Users/young/Desktop/Kinth/Screen_system/build-macos/ScreenInferenceSystem_autogen/UVLADIE3JM/../../../src/ServiceLauncher.h \
   /opt/homebrew/opt/qt@5/lib/QtCore.framework/Headers/QProcess \

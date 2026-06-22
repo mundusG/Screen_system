@@ -35,6 +35,7 @@ set(SOURCES
     src/InferenceSubscriber.cpp
     src/InferencePublisher.cpp
     src/ServiceLauncher.cpp
+    src/AlarmController.cpp
 )
 
 set(HEADERS
@@ -56,6 +57,7 @@ set(HEADERS
     src/InferenceSubscriber.h
     src/InferencePublisher.h
     src/ServiceLauncher.h
+    src/AlarmController.h
 )
 
 # Qt resources
