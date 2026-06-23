@@ -32,7 +32,6 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QCoreApplication>
-#include <QPushButton>
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -165,13 +164,6 @@ void MainWindow::setupUI()
     connect(mBottomBar, &BottomControlBar::settingsRequested, this, &MainWindow::openSettings);
     connect(mBottomBar, &BottomControlBar::snapshotRequested, this, &MainWindow::onSnapshotRequested);
     mCenterLayout->addWidget(mBottomBar);
-
-    // Test button: starts a worker thread that relays a play request back to
-    // the main-thread QSoundEffect (same path used on class-1 detection).
-    QPushButton* testSoundButton = new QPushButton(QStringLiteral("测试声音"), mCenterContainer);
-    connect(testSoundButton, &QPushButton::clicked,
-            this, [this]() { mThreadedSoundPlayer->trigger(); });
-    mCenterLayout->addWidget(testSoundButton);
 
     mRootLayout->addWidget(mCenterContainer, 1); // stretch = 1 (takes remaining space)
 
