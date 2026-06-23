@@ -3,6 +3,13 @@
 #include <QDebug>
 #include <QSoundEffect>
 #include <QUrl>
+#include <QDateTime>
+
+namespace {
+// Shared cooldown window: at most one playback per this interval, regardless of
+// how many class-1 frames arrive. Tune as needed (AlarmController uses 10 s).
+constexpr qint64 SoundCooldownMs = 10 * 1000;
+}
 
 // ---------------------------------------------------------------------------
 // SoundPlayWorker
@@ -17,7 +24,7 @@ void SoundPlayWorker::run()
 {
     // Simulate a time-consuming task running off the GUI thread. Do NOT call
     // any QSoundEffect method here — playback must happen in the main thread.
-    QThread::msleep(300);
+    // QThread::msleep(300);
 
     // Hand control back to the main thread. With a default (AutoConnection)
     // connect, this emission is queued onto the receiver's thread.
@@ -62,9 +69,15 @@ void ThreadedSoundPlayer::trigger()
 
 void ThreadedSoundPlayer::playSound()
 {
+    qDebug() << QThread::currentThread() << " playSound: " << mSound->status();
     // Runs on the main thread — safe to touch QSoundEffect here.
+    if (isCoolingDown()) {
+	qDebug() << "playSound: isCoolingDown: " << QDateTime::currentMSecsSinceEpoch() - mLastPlayMs;
+        return;
+    }
+
     if (mSound->status() == QSoundEffect::Ready) {
-        mSound->play();
+        startPlayback();
         return;
     }
 
@@ -76,13 +89,31 @@ void ThreadedSoundPlayer::playSound()
 
     // Null/Loading: the source isn't ready yet. Defer and play when it becomes
     // Ready. Multiple requests during loading coalesce into a single playback.
-    mPending = true;
+    // mPending = true;
 }
 
 void ThreadedSoundPlayer::onStatusChanged()
 {
     if (mSound->status() == QSoundEffect::Ready && mPending) {
         mPending = false;
-        mSound->play();
+        if (!isCoolingDown()) {
+            startPlayback();
+        }
     }
+}
+
+bool ThreadedSoundPlayer::isCoolingDown()
+{
+    // mLastPlayMs == 0 means it has never played -> first play allowed.
+    if (mLastPlayMs == 0) {
+        return false;
+    }
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    return (now - mLastPlayMs) < SoundCooldownMs;
+}
+
+void ThreadedSoundPlayer::startPlayback()
+{
+    mLastPlayMs = QDateTime::currentMSecsSinceEpoch(); // record this playback time
+    mSound->play();
 }

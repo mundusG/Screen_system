@@ -43,8 +43,12 @@ private slots:
     void onStatusChanged();
 
 private:
+    bool isCoolingDown();
+    void startPlayback();
+
     QSoundEffect* mSound;
-    bool mPending = false; // a play was requested while the source wasn't Ready
+    bool mPending = false;            // a play was requested while the source wasn't Ready
+    qint64 mLastPlayMs = 0;           // epoch ms of the last playback (0 = never played)
 };
 
 #endif // THREADEDSOUNDPLAYER_H
