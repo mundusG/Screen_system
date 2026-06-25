@@ -25,6 +25,8 @@ class InferenceSubscriberThread;
 class ServiceLauncher;
 class AlarmController;
 class ThreadedSoundPlayer;
+class DefectImageStore;
+class DefectImageBrowserDialog;
 
 class MainWindow : public QMainWindow
 {
@@ -59,6 +61,7 @@ private slots:
     void onGridModeChanged(int mode);
     void onToggleFullscreen();
     void onSnapshotRequested();
+    void openDefectImageBrowser();
     void onChannelsDiscovered(const QVector<ChannelInfo>& channels, const QString& mqttSourceId);
 
 private:
@@ -92,6 +95,8 @@ private:
     ServiceLauncher* mServiceLauncher;
     AlarmController* mAlarmController;
     ThreadedSoundPlayer* mThreadedSoundPlayer;
+    DefectImageStore* mDefectImageStore;
+    DefectImageBrowserDialog* mDefectImageBrowser;
 
     bool    mRunning;
     qint64  mStartTime;

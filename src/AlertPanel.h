@@ -38,6 +38,7 @@ public:
 signals:
     void alertClicked(int cameraId);
     void cameraToggleRequested(int cameraId);
+    void imageLibraryRequested();
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -48,6 +49,7 @@ private:
     void drawAlertList(QPainter& p, const QRect& area);
     void drawPowerIcon(QPainter& p, const QRect& r, bool running);
     QRect toggleHitRect(int row) const;
+    QRect imageLibraryButtonRect(const QRect& alertArea) const;
 
     QVector<DeviceStatus> mDevices;
     QVector<bool> mCameraRunning;

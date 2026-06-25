@@ -13,6 +13,8 @@
 #include "ServiceLauncher.h"
 #include "AlarmController.h"
 #include "ThreadedSoundPlayer.h"
+#include "DefectImageStore.h"
+#include "DefectImageBrowserDialog.h"
 #include "Theme.h"
 
 #include <QVBoxLayout>
@@ -48,6 +50,8 @@ MainWindow::MainWindow(QWidget* parent)
     , mServiceLauncher(new ServiceLauncher(this))
     , mAlarmController(new AlarmController(this))
     , mThreadedSoundPlayer(new ThreadedSoundPlayer(this))
+    , mDefectImageStore(new DefectImageStore(this))
+    , mDefectImageBrowser(nullptr)
     , mRunning(false)
     , mStartTime(0)
     , mSelectedCamera(0)
@@ -55,6 +59,7 @@ MainWindow::MainWindow(QWidget* parent)
     , mSystemMode("local_inference")
 {
     setupUI();
+    mDefectImageStore->initialize();
 
     mStatusTimer = new QTimer(this);
     connect(mStatusTimer, &QTimer::timeout, this, &MainWindow::updatePanels);
@@ -171,6 +176,8 @@ void MainWindow::setupUI()
     mAlertPanel = new AlertPanel(mCentralWidget);
     connect(mAlertPanel, &AlertPanel::cameraToggleRequested,
             this, &MainWindow::toggleCamera);
+    connect(mAlertPanel, &AlertPanel::imageLibraryRequested,
+            this, &MainWindow::openDefectImageBrowser);
     mRootLayout->addWidget(mAlertPanel);
 
     qDebug() << "MainWindow::setupUI() - COMPLETE, showing window...";
@@ -812,6 +819,21 @@ void MainWindow::onSnapshotRequested()
     }
 }
 
+void MainWindow::openDefectImageBrowser()
+{
+    if (!mDefectImageBrowser) {
+        mDefectImageBrowser = new DefectImageBrowserDialog(mDefectImageStore, this);
+        mDefectImageBrowser->setAttribute(Qt::WA_DeleteOnClose);
+        connect(mDefectImageBrowser, &QObject::destroyed, this, [this]() {
+            mDefectImageBrowser = nullptr;
+        });
+    }
+
+    mDefectImageBrowser->show();
+    mDefectImageBrowser->raise();
+    mDefectImageBrowser->activateWindow();
+}
+
 // ================================================================
 // Pipeline signal handlers
 // ================================================================
@@ -945,34 +967,39 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
         }
     }
 
-    float bestConf = 0.0f;
-    int bestClassId = -1;
-    bool hasDefect = false;
+    QVector<Detection> defectDetections;
+    float bestDefectConf = 0.0f;
     for (const auto& det : result.detections) {
-        if (det.classId == 1) {
-            hasDefect = true;
-        }
-        if (det.confidence > bestConf) {
-            bestConf = det.confidence;
-            bestClassId = det.classId;
-        }
+        if (det.filtered || det.classId != 1)
+            continue;
+        defectDetections.append(det);
+        if (det.confidence > bestDefectConf)
+            bestDefectConf = det.confidence;
     }
 
     // One inference result containing any class-1 detection creates one
     // request. AlarmController serializes playback and enforces the global
     // 10-second cooldown across all cameras.
-    if (hasDefect) {
+    if (!defectDetections.isEmpty()) {
         // mAlarmController->requestAlarm();
         // Independent QThread-relay player (coexists with AlarmController):
         // one worker thread per frame that contains any class-1 detection.
         mThreadedSoundPlayer->trigger();
     }
 
-    if (bestConf >= 0.6f && camId < mVideoWidgets.size()) {
+    if (bestDefectConf >= 0.6f && camId < mVideoWidgets.size()) {
         QImage thumbnail = mVideoWidgets[camId]->grabThumbnail(100);
         if (camName.isEmpty() && mChannelInfos.contains(camId))
             camName = mChannelInfos[camId].name;
-        mAlertPanel->addAlert(camId, camName, bestClassId, bestConf, thumbnail);
+        if (camName.isEmpty())
+            camName = QString("Camera %1").arg(camId + 1);
+        mAlertPanel->addAlert(camId, camName, 1, bestDefectConf, thumbnail);
+
+        QImage frame = mVideoWidgets[camId]->grabFullFrame();
+        if (!frame.isNull()) {
+            mDefectImageStore->saveDefectImage(
+                camId, camName, frame, defectDetections, bestDefectConf, result.timestamp);
+        }
     }
 }
 

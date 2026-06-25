@@ -37,6 +37,8 @@ set(SOURCES
     src/ServiceLauncher.cpp
     src/AlarmController.cpp
     src/ThreadedSoundPlayer.cpp
+    src/DefectImageStore.cpp
+    src/DefectImageBrowserDialog.cpp
 )
 
 set(HEADERS
@@ -60,6 +62,8 @@ set(HEADERS
     src/ServiceLauncher.h
     src/AlarmController.h
     src/ThreadedSoundPlayer.h
+    src/DefectImageStore.h
+    src/DefectImageBrowserDialog.h
 )
 
 # Qt resources
@@ -102,6 +106,20 @@ else()
     configure_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/config/default_config.json.example
         ${CMAKE_CURRENT_BINARY_DIR}/config/default_config.json
+        COPYONLY
+    )
+endif()
+
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/config/defect_images.json)
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/config/defect_images.json
+        ${CMAKE_CURRENT_BINARY_DIR}/config/defect_images.json
+        COPYONLY
+    )
+else()
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/config/defect_images.json.example
+        ${CMAKE_CURRENT_BINARY_DIR}/config/defect_images.json
         COPYONLY
     )
 endif()

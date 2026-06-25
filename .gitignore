@@ -5,6 +5,7 @@ build/
 build-macos/
 cmake-build-*/
 out/
+defect_images/
 
 # ============================================================
 # IDE / 编辑器
@@ -43,3 +44,8 @@ desktop.ini
 config/default_config.json
 rk3576/bridge_config.json
 rk3576/db/mpp/*.json
+
+# ============================================================
+# 测试工具
+# ============================================================
+scripts/

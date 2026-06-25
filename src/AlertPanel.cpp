@@ -177,6 +177,17 @@ void AlertPanel::drawAlertList(QPainter& p, const QRect& area)
     p.setPen(Theme::textPrimary());
     p.drawText(x, y, area.width(), 24, Qt::AlignVCenter, QString::fromUtf8("Alerts"));
 
+    QRect libraryRect = imageLibraryButtonRect(area);
+    p.setPen(QPen(Theme::borderMedium(), 1));
+    p.setBrush(Theme::buttonBg());
+    p.drawRoundedRect(libraryRect, 4, 4);
+    QFont libraryFont;
+    libraryFont.setPointSize(8);
+    libraryFont.setBold(true);
+    p.setFont(libraryFont);
+    p.setPen(Theme::textSecondary());
+    p.drawText(libraryRect, Qt::AlignCenter, QString::fromUtf8("查看更多"));
+
     // Alert count
     if (!mAlerts.empty()) {
         QFont badgeFont;
@@ -186,7 +197,7 @@ void AlertPanel::drawAlertList(QPainter& p, const QRect& area)
         QString count = QString::number(mAlerts.size());
         QFontMetrics bfm(badgeFont);
         int bw = bfm.horizontalAdvance(count) + 12;
-        QRect badgeRect(x + area.width() - bw, y + 2, bw, 20);
+        QRect badgeRect(libraryRect.left() - bw - 6, y + 2, bw, 20);
         p.setPen(Qt::NoPen);
         p.setBrush(QColor(255, 82, 82, 60));
         p.drawRoundedRect(badgeRect, 10, 10);
@@ -249,8 +260,7 @@ void AlertPanel::drawAlertList(QPainter& p, const QRect& area)
         detailFont.setPointSize(7);
         p.setFont(detailFont);
         p.setPen(Theme::textMuted());
-        QString detail = QString("Class %1 | %2%")
-            .arg(alert.classId)
+        QString detail = QString::fromUtf8("异常 | %1%")
             .arg(static_cast<int>(alert.confidence * 100));
         p.drawText(textX, ey + 24, area.width() - (textX - x) - 4, 16, Qt::AlignVCenter, detail);
 
@@ -272,9 +282,18 @@ void AlertPanel::mousePressEvent(QMouseEvent* event)
         }
     }
 
-    // Check if click is on an alert entry
     int margin = 12;
+    int contentW = width() - margin * 2;
     int deviceSectionH = 44 + mDevices.size() * 32 + 16;
+    QRect deviceArea(margin, 8, contentW, deviceSectionH);
+    int sepY = deviceArea.bottom() + 8;
+    QRect alertArea(margin, sepY + 8, contentW, height() - sepY - 16);
+    if (imageLibraryButtonRect(alertArea).contains(event->pos())) {
+        emit imageLibraryRequested();
+        return;
+    }
+
+    // Check if click is on an alert entry
     int alertStartY = 8 + deviceSectionH + 16 + 32;
     int entryH = 72;
 
@@ -292,6 +311,11 @@ QRect AlertPanel::toggleHitRect(int row) const
     int margin = 12;
     int y = 8 + 32 + row * 32;
     return QRect(margin + width() - margin * 2 - 24, y + 4, 20, 20);
+}
+
+QRect AlertPanel::imageLibraryButtonRect(const QRect& alertArea) const
+{
+    return QRect(alertArea.right() - 58, alertArea.top() + 1, 58, 22);
 }
 
 void AlertPanel::drawPowerIcon(QPainter& p, const QRect& r, bool running)
