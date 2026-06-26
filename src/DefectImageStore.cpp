@@ -260,16 +260,22 @@ void DefectImageStore::saveDefectImage(int cameraId,
                                        float confidence,
                                        qint64 timestampMs)
 {
-    if (frame.isNull() || detections.isEmpty())
+    if (frame.isNull() || detections.isEmpty()) {
+        qWarning() << "DefectImageStore::saveDefectImage: skipping -"
+                   << "frame.null:" << frame.isNull()
+                   << "detections.empty:" << detections.isEmpty();
         return;
+    }
 
     QString storageDir;
     QString location;
     int sequence = 0;
     {
         QMutexLocker locker(&mMutex);
-        if (!mInitialized)
+        if (!mInitialized) {
+            qWarning() << "DefectImageStore::saveDefectImage: NOT initialized, skipping save";
             return;
+        }
         storageDir = mConfig.storageDir;
         location = mConfig.locations.value(cameraId, fallbackName).trimmed();
         sequence = ++mSaveSequence;
@@ -306,11 +312,17 @@ void DefectImageStore::saveDefectImage(int cameraId,
     request.frame = frame;
     request.detections = detections;
 
+    qDebug() << "DefectImageStore: enqueuing save for camera" << cameraId
+             << "path:" << filePath
+             << "dets:" << detections.size()
+             << "conf:" << confidence;
+
     QThreadPool::globalInstance()->start(new SaveImageTask(request));
 }
 
 void DefectImageStore::onAsyncImageSaved(const DefectImageRecord& record)
 {
+    qDebug() << "DefectImageStore: image saved OK:" << record.fileName;
     {
         QMutexLocker locker(&mMutex);
         mRecords.prepend(record);

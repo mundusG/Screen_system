@@ -59,7 +59,11 @@ MainWindow::MainWindow(QWidget* parent)
     , mSystemMode("local_inference")
 {
     setupUI();
-    mDefectImageStore->initialize();
+    if (!mDefectImageStore->initialize()) {
+        qWarning() << "MainWindow: DefectImageStore initialization FAILED, defect images will not be saved!";
+    } else {
+        qDebug() << "MainWindow: DefectImageStore initialized OK, count:" << mDefectImageStore->count();
+    }
 
     mStatusTimer = new QTimer(this);
     connect(mStatusTimer, &QTimer::timeout, this, &MainWindow::updatePanels);
@@ -999,6 +1003,9 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
         if (!frame.isNull()) {
             mDefectImageStore->saveDefectImage(
                 camId, camName, frame, defectDetections, bestDefectConf, result.timestamp);
+        } else {
+            qWarning() << "MainWindow: grabFullFrame returned null for camera" << camId
+                       << "- defect image NOT saved";
         }
     }
 }
