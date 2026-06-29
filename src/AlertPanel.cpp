@@ -28,7 +28,7 @@ void AlertPanel::updateDeviceStatus(int cameraId, const QString& name, bool onli
     update();
 }
 
-void AlertPanel::addAlert(int cameraId, const QString& cameraName, int classId, float confidence, const QImage& thumbnail)
+void AlertPanel::addAlert(int cameraId, const QString& cameraName, int classId, float confidence, const QImage& thumbnail, bool periodic)
 {
     AlertEntry entry;
     entry.cameraId = cameraId;
@@ -37,6 +37,7 @@ void AlertPanel::addAlert(int cameraId, const QString& cameraName, int classId, 
     entry.confidence = confidence;
     entry.timestamp = QDateTime::currentDateTime();
     entry.thumbnail = thumbnail;
+    entry.periodic = periodic;
 
     mAlerts.push_front(entry);
     if (static_cast<int>(mAlerts.size()) > MaxAlerts)
@@ -232,7 +233,12 @@ void AlertPanel::drawAlertList(QPainter& p, const QRect& area)
         p.drawRoundedRect(x, ey, area.width(), entryH - 4, 4, 4);
 
         // Severity indicator (left bar)
-        QColor severity = (alert.confidence > 0.8f) ? Theme::alertRed() : Theme::warningOrange();
+        QColor severity;
+        if (alert.periodic) {
+            severity = Theme::onlineGreen();
+        } else {
+            severity = (alert.confidence > 0.8f) ? Theme::alertRed() : Theme::warningOrange();
+        }
         p.setBrush(severity);
         p.drawRect(x, ey + 4, 3, entryH - 12);
 
@@ -259,8 +265,18 @@ void AlertPanel::drawAlertList(QPainter& p, const QRect& area)
         QFont detailFont;
         detailFont.setPointSize(7);
         p.setFont(detailFont);
-        p.setPen(Theme::textMuted());
-        QString detail = QString::fromUtf8("异常 | %1%")
+        QColor detailColor;
+        QString label;
+        if (alert.periodic) {
+            detailColor = Theme::onlineGreen();
+            label = QString::fromUtf8("正常");
+        } else {
+            detailColor = (alert.confidence > 0.8f) ? Theme::alertRed() : Theme::warningOrange();
+            label = QString::fromUtf8("异常");
+        }
+        p.setPen(detailColor);
+        QString detail = QString("%1 | %2%")
+            .arg(label)
             .arg(static_cast<int>(alert.confidence * 100));
         p.drawText(textX, ey + 24, area.width() - (textX - x) - 4, 16, Qt::AlignVCenter, detail);
 

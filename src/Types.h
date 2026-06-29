@@ -8,6 +8,7 @@
 #include <QMap>
 #include <QColor>
 #include <QMetaType>
+#include <QJsonArray>
 #include <opencv2/core.hpp>
 
 /// Bounding box in normalized coordinates [0, 1] or pixel coordinates
@@ -45,6 +46,17 @@ struct BoundingBox {
         float unionArea = area1 + area2 - interArea;
         return (unionArea > 0) ? interArea / unionArea : 0.0f;
     }
+
+    // Check if this box contains a point
+    bool containsPoint(float px, float py) const {
+        return px >= left() && px <= right() &&
+               py >= top() && py <= bottom();
+    }
+
+    // Check if this box contains the center of another box
+    bool containsCenterOf(const BoundingBox& other) const {
+        return containsPoint(other.x, other.y);
+    }
 };
 
 /// A single detection result
@@ -56,6 +68,14 @@ struct Detection {
     QString     className;             // human-readable class name
     bool        filtered    = false;   // whether this detection passed confidence filter
     bool        normalized  = false;   // true if bbox is in [0,1] normalized coords
+};
+
+/// Alert configuration — parsed from per-camera "alert_config" JSON section
+struct AlertConfig {
+    bool            enabled         = true;
+    QVector<int>    defectClassIds  = {1};     // class IDs treated as "defect"
+    float           minConfidence   = 0.6f;    // minimum confidence to trigger alert
+    QJsonArray      filters;                   // raw JSON array of filter rules for pipeline factory
 };
 
 /// Per-camera configuration
@@ -84,6 +104,10 @@ struct CameraConfig {
     // Image stream mode
     QString snapshotUrl;                       // HTTP/RTSP/file URL for periodic snapshot
     int     snapshotIntervalMs = 1000;         // ms between snapshot fetches
+
+    // Alert / snapshot
+    int         alertSnapshotIntervalMs = 0;   // ms between periodic alert snapshots (0=disabled, MQTT-trigger only)
+    AlertConfig alertConfig;                   // per-camera alert filtering configuration
 
     // Color mapping: classId -> QColor name
     QMap<int, QString> classColors;

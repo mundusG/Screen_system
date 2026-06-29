@@ -27,6 +27,7 @@ class AlarmController;
 class ThreadedSoundPlayer;
 class DefectImageStore;
 class DefectImageBrowserDialog;
+class AlertFilterPipeline;
 
 class MainWindow : public QMainWindow
 {
@@ -63,11 +64,16 @@ private slots:
     void onSnapshotRequested();
     void openDefectImageBrowser();
     void onChannelsDiscovered(const QVector<ChannelInfo>& channels, const QString& mqttSourceId);
+    void onAlertSnapshotTimer(int cameraId);
 
 private:
     void setupUI();
     bool setupCameraPipeline(int cameraId, const CameraConfig& config);
     void teardownCameraPipeline(int cameraId);
+    QString resolveCameraSource(int cameraId) const;
+    bool hasConfigSource(int cameraId) const;
+    void saveAlertSnapshot(int cameraId);
+    void tryFallbackSource(int cameraId);
     void updatePanels();
     void applyGridLayout(int mode);
     void constrainVideoAspectRatios();
@@ -106,6 +112,13 @@ private:
     int     mGridMode;
     QMap<int, bool> mCameraRunning;
     QMap<int, ChannelInfo> mChannelInfos;
+    QMap<int, CameraConfig> mCameraConfigs;      // cached per-camera configs
+    QMap<int, QTimer*> mAlertSnapshotTimers;     // periodic alert snapshot timers
+    QMap<int, AlertFilterPipeline*> mAlertPipelines; // per-camera alert filter pipelines
+    QMap<int, QString> mCameraFallbackSources;   // fallback URL per camera (preview URL)
+    QMap<int, QTimer*> mCameraSourceFallbackTimers; // one-shot fallback check timers
+    QMap<int, QVector<Detection>> mLatestDefectDetections;  // latest defect detections per camera
+    QMap<int, float> mLatestDefectConf;          // latest best defect confidence per camera
     QString mSystemMode; // "local_inference", "mqtt_publish", "mqtt_subscribe"
 };
 

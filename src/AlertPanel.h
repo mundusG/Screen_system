@@ -14,6 +14,7 @@ struct AlertEntry {
     float confidence;
     QDateTime timestamp;
     QImage thumbnail;
+    bool periodic = false;  // true = heartbeat, false = real alert
 };
 
 struct DeviceStatus {
@@ -31,7 +32,7 @@ public:
     explicit AlertPanel(QWidget* parent = nullptr);
 
     void updateDeviceStatus(int cameraId, const QString& name, bool online, double fps, int dets);
-    void addAlert(int cameraId, const QString& cameraName, int classId, float confidence, const QImage& thumbnail = QImage());
+    void addAlert(int cameraId, const QString& cameraName, int classId, float confidence, const QImage& thumbnail = QImage(), bool periodic = false);
     void clearAlerts();
     void setCameraRunning(int cameraId, bool running);
 

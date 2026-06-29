@@ -267,12 +267,31 @@ void VideoWidget::drawLiveIndicator(QPainter& p, const QRect& videoRect)
 {
     if (!mHasSignal) return;
 
+    QFont font("Monospace", 7, QFont::Bold);
+
+    // --- Source type tag (left of LIVE badge) ---
+    if (!mSourceLabel.isEmpty()) {
+        p.setFont(font);
+        QFontMetrics fm(font);
+        int sw = fm.horizontalAdvance(mSourceLabel) + 10;
+        int sx = videoRect.right() - 60 - sw - 4;
+        int sy = videoRect.top() + 6;
+
+        QColor srcBg = (mSourceLabel == "CFG")
+            ? QColor(0, 140, 80, 200)    // green — config source
+            : QColor(180, 120, 0, 200);  // amber — fallback/preview
+
+        p.setPen(Qt::NoPen);
+        p.setBrush(srcBg);
+        p.drawRoundedRect(sx, sy, sw, 18, 4, 4);
+
+        p.setPen(QColor(220, 255, 220));
+        p.drawText(QRectF(sx, sy, sw, 18), Qt::AlignCenter, mSourceLabel);
+    }
+
+    // --- LIVE badge ---
     int rx = videoRect.right() - 60;
     int ry = videoRect.top() + 6;
-
-    // "LIVE" badge
-    QFont font("Monospace", 8, QFont::Bold);
-    p.setFont(font);
 
     QColor dotColor = Theme::liveGreen();
     dotColor.setAlphaF(mLivePulse);

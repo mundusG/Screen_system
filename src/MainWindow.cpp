@@ -15,6 +15,7 @@
 #include "ThreadedSoundPlayer.h"
 #include "DefectImageStore.h"
 #include "DefectImageBrowserDialog.h"
+#include "AlertFilter.h"
 #include "Theme.h"
 
 #include <QVBoxLayout>
@@ -343,6 +344,12 @@ bool MainWindow::initialize(const QString& configPath, bool forceImageMode)
 
 bool MainWindow::setupCameraPipeline(int cameraId, const CameraConfig& config)
 {
+    // Cache camera config for later use (source resolution, alert settings, etc.)
+    mCameraConfigs[cameraId] = config;
+
+    // Create alert filter pipeline from config
+    mAlertPipelines[cameraId] = new AlertFilterPipeline(config.alertConfig);
+
     auto* smoother = new SmoothingFilter(cameraId, this);
     smoother->setAlpha(config.smoothingAlpha);
     smoother->setMaxLostFrames(config.trackMaxLost);
@@ -351,6 +358,18 @@ bool MainWindow::setupCameraPipeline(int cameraId, const CameraConfig& config)
             this, &MainWindow::onDisplayResultReady);
 
     mSmoothingFilters[cameraId] = smoother;
+
+    // Set up periodic alert snapshot timer
+    if (config.alertSnapshotIntervalMs > 0) {
+        auto* timer = new QTimer(this);
+        connect(timer, &QTimer::timeout, this, [this, cameraId]() {
+            onAlertSnapshotTimer(cameraId);
+        });
+        timer->start(config.alertSnapshotIntervalMs);
+        mAlertSnapshotTimers[cameraId] = timer;
+        qDebug() << "MainWindow: Alert snapshot timer for camera" << cameraId
+                 << "interval:" << config.alertSnapshotIntervalMs << "ms";
+    }
 
     // Determine camera mode: use camera-specific mode if set, otherwise use system mode
     QString cameraMode = config.mode.isEmpty() ? mSystemMode : config.mode;
@@ -467,6 +486,32 @@ void MainWindow::teardownCameraPipeline(int cameraId)
     mCameraRunning.remove(cameraId);
     mAlertPanel->setCameraRunning(cameraId, false);
 
+    // Clean up alert snapshot timer
+    if (mAlertSnapshotTimers.contains(cameraId)) {
+        mAlertSnapshotTimers[cameraId]->stop();
+        delete mAlertSnapshotTimers[cameraId];
+        mAlertSnapshotTimers.remove(cameraId);
+    }
+
+    // Clean up alert filter pipeline
+    if (mAlertPipelines.contains(cameraId)) {
+        delete mAlertPipelines[cameraId];
+        mAlertPipelines.remove(cameraId);
+    }
+
+    // Clean up source fallback state
+    mCameraFallbackSources.remove(cameraId);
+    if (mCameraSourceFallbackTimers.contains(cameraId)) {
+        mCameraSourceFallbackTimers[cameraId]->stop();
+        delete mCameraSourceFallbackTimers[cameraId];
+        mCameraSourceFallbackTimers.remove(cameraId);
+    }
+
+    // Clean up cached data
+    mCameraConfigs.remove(cameraId);
+    mLatestDefectDetections.remove(cameraId);
+    mLatestDefectConf.remove(cameraId);
+
     if (mCameraThreads.contains(cameraId)) {
         auto* camera = mCameraThreads[cameraId];
         mCameraThreads.remove(cameraId);
@@ -496,6 +541,119 @@ void MainWindow::teardownCameraPipeline(int cameraId)
     }
 }
 
+void MainWindow::saveAlertSnapshot(int cameraId)
+{
+    if (cameraId >= mVideoWidgets.size())
+        return;
+
+    QVector<Detection> defects = mLatestDefectDetections.value(cameraId);
+    float bestConf = mLatestDefectConf.value(cameraId, 0.0f);
+
+    if (defects.isEmpty()) {
+        qDebug() << "AlertTimer: cam" << cameraId << "skip - no defects";
+        return;
+    }
+
+    QString camName;
+    auto configs = mConfigManager->allConfigs();
+    for (const auto& cfg : configs) {
+        if (cfg.cameraId == cameraId) { camName = cfg.name; break; }
+    }
+    if (camName.isEmpty() && mChannelInfos.contains(cameraId))
+        camName = mChannelInfos[cameraId].name;
+    if (camName.isEmpty())
+        camName = QString("Camera %1").arg(cameraId + 1);
+
+    int defectClassId = 1;
+    for (const auto& det : defects) {
+        if (det.confidence >= bestConf) {
+            defectClassId = det.classId;
+            break;
+        }
+    }
+
+    QImage thumbnail = mVideoWidgets[cameraId]->grabThumbnail(100);
+    mAlertPanel->addAlert(cameraId, camName, defectClassId, bestConf, thumbnail, true);
+    qDebug() << "AlertTimer: cam" << cameraId << "pushed to alert panel, conf:" << bestConf;
+}
+
+void MainWindow::onAlertSnapshotTimer(int cameraId)
+{
+    saveAlertSnapshot(cameraId);
+}
+
+void MainWindow::tryFallbackSource(int cameraId)
+{
+    if (!mCameraFallbackSources.contains(cameraId))
+        return;
+    if (!mCameraRunning.value(cameraId, false))
+        return;
+
+    QString fallback = mCameraFallbackSources[cameraId];
+
+    bool isCameraThread = mCameraThreads.contains(cameraId);
+    bool isImageStream  = mImageStreamThreads.contains(cameraId);
+    if (!isCameraThread && !isImageStream)
+        return;
+
+    qWarning() << "MainWindow: Camera" << cameraId
+               << "config source failed, switching to fallback:" << fallback;
+
+    // Update the visual source indicator
+    if (cameraId < mVideoWidgets.size())
+        mVideoWidgets[cameraId]->setSourceLabel("PRV");
+
+    if (isCameraThread) {
+        mCameraThreads[cameraId]->requestStop();
+        QTimer::singleShot(500, this, [this, cameraId, fallback]() {
+            if (mCameraThreads.contains(cameraId) && mCameraRunning.value(cameraId, false)) {
+                mCameraThreads[cameraId]->requestStart(fallback);
+                qDebug() << "MainWindow: Camera" << cameraId << "restarted with fallback source (CameraThread)";
+            }
+        });
+    } else {
+        mImageStreamThreads[cameraId]->requestStop();
+        QTimer::singleShot(500, this, [this, cameraId, fallback]() {
+            if (mImageStreamThreads.contains(cameraId) && mCameraRunning.value(cameraId, false)) {
+                mImageStreamThreads[cameraId]->requestStart(fallback);
+                qDebug() << "MainWindow: Camera" << cameraId << "restarted with fallback source (ImageStreamThread)";
+            }
+        });
+    }
+
+    // Clean up fallback state
+    mCameraFallbackSources.remove(cameraId);
+    if (mCameraSourceFallbackTimers.contains(cameraId)) {
+        mCameraSourceFallbackTimers[cameraId]->stop();
+        delete mCameraSourceFallbackTimers[cameraId];
+        mCameraSourceFallbackTimers.remove(cameraId);
+    }
+}
+
+bool MainWindow::hasConfigSource(int cameraId) const
+{
+    auto configs = mConfigManager->allConfigs();
+    for (const auto& cfg : configs) {
+        if (cfg.cameraId == cameraId && !cfg.source.isEmpty())
+            return true;
+    }
+    return false;
+}
+
+QString MainWindow::resolveCameraSource(int cameraId) const
+{
+    // Priority 1: explicit source from config file (user-configured RTSP/device)
+    auto configs = mConfigManager->allConfigs();
+    for (const auto& cfg : configs) {
+        if (cfg.cameraId == cameraId && !cfg.source.isEmpty())
+            return cfg.source;
+    }
+    // Priority 2: preview URL from MQTT channel discovery
+    if (mChannelInfos.contains(cameraId))
+        return mChannelInfos[cameraId].previewUrl;
+    return QString();
+}
+
 void MainWindow::startAll()
 {
     if (mRunning) return;
@@ -507,16 +665,36 @@ void MainWindow::startAll()
     // Start CameraThreads
     for (auto it = mCameraThreads.begin(); it != mCameraThreads.end(); ++it) {
         int camId = it.key();
-        QString source;
+        QString source = resolveCameraSource(camId);
 
-        // Use preview URL from discovered channels (mqtt_subscribe mode)
-        if (mChannelInfos.contains(camId)) {
-            source = mChannelInfos[camId].previewUrl;
-        } else {
-            auto configs = mConfigManager->allConfigs();
-            for (const auto& cfg : configs) {
-                if (cfg.cameraId == camId) { source = cfg.source; break; }
+        // Determine fallback and source label
+        QString previewUrl;
+        if (mChannelInfos.contains(camId))
+            previewUrl = mChannelInfos[camId].previewUrl;
+        bool usingConfig = hasConfigSource(camId);
+        if (usingConfig) {
+            if (camId < mVideoWidgets.size())
+                mVideoWidgets[camId]->setSourceLabel("CFG");
+            // Set up fallback only if config source differs from preview URL
+            if (!previewUrl.isEmpty() && source != previewUrl) {
+                mCameraFallbackSources[camId] = previewUrl;
+                auto* fallbackTimer = new QTimer(this);
+                fallbackTimer->setSingleShot(true);
+                connect(fallbackTimer, &QTimer::timeout, this, [this, camId]() {
+                    tryFallbackSource(camId);
+                });
+                fallbackTimer->start(12000);
+                mCameraSourceFallbackTimers[camId] = fallbackTimer;
+                qDebug() << "MainWindow: Camera" << camId
+                         << "using config source:" << source
+                         << "fallback:" << previewUrl << "(12s timeout)";
+            } else {
+                qDebug() << "MainWindow: Camera" << camId
+                         << "using config source:" << source << "(no fallback)";
             }
+        } else {
+            if (camId < mVideoWidgets.size())
+                mVideoWidgets[camId]->setSourceLabel(QString());
         }
 
         it.value()->requestStart(source);
@@ -530,19 +708,50 @@ void MainWindow::startAll()
     // Start ImageStreamThreads
     for (auto it = mImageStreamThreads.begin(); it != mImageStreamThreads.end(); ++it) {
         int camId = it.key();
-        QString url;
+        QString url = resolveCameraSource(camId);
 
-        // Use snapshot URL from config or preview URL from discovered channels
-        if (mChannelInfos.contains(camId) && !mChannelInfos[camId].previewUrl.isEmpty()) {
-            url = mChannelInfos[camId].previewUrl;
-        }
-        // Override with explicit snapshot URL from config if set
+        // Build fallback URL chain: config snapshotUrl → channel snapshotUrl → channel previewUrl
+        QString fallbackUrl;
         auto configs = mConfigManager->allConfigs();
         for (const auto& cfg : configs) {
             if (cfg.cameraId == camId && !cfg.snapshotUrl.isEmpty()) {
-                url = cfg.snapshotUrl;
-                break;
+                fallbackUrl = cfg.snapshotUrl; break;
             }
+        }
+        if (fallbackUrl.isEmpty() && mChannelInfos.contains(camId)) {
+            const auto& ch = mChannelInfos[camId];
+            fallbackUrl = ch.snapshotUrl.isEmpty() ? ch.previewUrl : ch.snapshotUrl;
+        }
+
+        // If no config source, use the fallback chain as primary
+        if (url.isEmpty())
+            url = fallbackUrl;
+
+        // Source label: show CFG whenever config has a source, regardless of fallback
+        bool usingConfig = hasConfigSource(camId);
+        if (usingConfig) {
+            if (camId < mVideoWidgets.size())
+                mVideoWidgets[camId]->setSourceLabel("CFG");
+            // Set up fallback only if config source differs from the fallback URL
+            if (!fallbackUrl.isEmpty() && url != fallbackUrl) {
+                mCameraFallbackSources[camId] = fallbackUrl;
+                auto* fallbackTimer = new QTimer(this);
+                fallbackTimer->setSingleShot(true);
+                connect(fallbackTimer, &QTimer::timeout, this, [this, camId]() {
+                    tryFallbackSource(camId);
+                });
+                fallbackTimer->start(12000);
+                mCameraSourceFallbackTimers[camId] = fallbackTimer;
+                qDebug() << "MainWindow: Camera" << camId
+                         << "(image_stream) using config source:" << url
+                         << "fallback:" << fallbackUrl << "(12s timeout)";
+            } else {
+                qDebug() << "MainWindow: Camera" << camId
+                         << "(image_stream) using config source:" << url << "(no fallback)";
+            }
+        } else {
+            if (camId < mVideoWidgets.size())
+                mVideoWidgets[camId]->setSourceLabel(QString());
         }
 
         it.value()->requestStart(url);
@@ -583,6 +792,14 @@ void MainWindow::stopAll()
     for (auto* smoother : mSmoothingFilters) {
         smoother->reset();
     }
+
+    // Cancel all pending source fallback timers
+    for (auto it = mCameraSourceFallbackTimers.begin(); it != mCameraSourceFallbackTimers.end(); ++it) {
+        it.value()->stop();
+        delete it.value();
+    }
+    mCameraSourceFallbackTimers.clear();
+    mCameraFallbackSources.clear();
 
     updatePanels();
     qDebug() << "MainWindow: All systems stopped";
@@ -873,12 +1090,28 @@ void MainWindow::onChannelsDiscovered(const QVector<ChannelInfo>& channels,
 
         if (mSystemMode == "image_stream") {
             cfg.mode = "image_stream";
-            // Prefer dedicated snapshot URL, fall back to preview URL (RTSP → single-frame grab)
-            cfg.snapshotUrl = ch.snapshotUrl.isEmpty() ? ch.previewUrl : ch.snapshotUrl;
-            cfg.source = cfg.snapshotUrl;
+            // Use config source if explicitly set, otherwise use channel URLs
+            QString configSource = resolveCameraSource(ch.cameraId);
+            if (!configSource.isEmpty()) {
+                cfg.source = configSource;
+                cfg.snapshotUrl = configSource;
+            } else {
+                cfg.snapshotUrl = ch.snapshotUrl.isEmpty() ? ch.previewUrl : ch.snapshotUrl;
+                cfg.source = cfg.snapshotUrl;
+            }
         } else {
             cfg.mode = "mqtt_subscribe";
-            cfg.source = ch.previewUrl;
+            // Use config source if explicitly set, otherwise fall back to preview URL
+            cfg.source = resolveCameraSource(ch.cameraId);
+            if (cfg.source.isEmpty())
+                cfg.source = ch.previewUrl;
+        }
+
+        // Merge alert config from config file (if camera has explicit config)
+        CameraConfig fileCfg = mConfigManager->cameraConfig(ch.cameraId);
+        if (fileCfg.cameraId == ch.cameraId) {
+            cfg.alertConfig = fileCfg.alertConfig;
+            cfg.alertSnapshotIntervalMs = fileCfg.alertSnapshotIntervalMs;
         }
 
         setupCameraPipeline(ch.cameraId, cfg);
@@ -902,9 +1135,69 @@ void MainWindow::onChannelsDiscovered(const QVector<ChannelInfo>& channels,
             if (running) continue;
 
             if (mCameraThreads.contains(ch.cameraId)) {
-                mCameraThreads[ch.cameraId]->requestStart(ch.previewUrl);
+                QString src = resolveCameraSource(ch.cameraId);
+                if (src.isEmpty()) src = ch.previewUrl;
+
+                // Source label: show CFG whenever config has a source
+                bool usingConfig = hasConfigSource(ch.cameraId);
+                if (usingConfig) {
+                    if (ch.cameraId < mVideoWidgets.size())
+                        mVideoWidgets[ch.cameraId]->setSourceLabel("CFG");
+                    // Set up fallback only if config source differs from preview URL
+                    if (!ch.previewUrl.isEmpty() && src != ch.previewUrl) {
+                        mCameraFallbackSources[ch.cameraId] = ch.previewUrl;
+                        auto* fallbackTimer = new QTimer(this);
+                        fallbackTimer->setSingleShot(true);
+                        connect(fallbackTimer, &QTimer::timeout, this, [this, camId = ch.cameraId]() {
+                            tryFallbackSource(camId);
+                        });
+                        fallbackTimer->start(12000);
+                        mCameraSourceFallbackTimers[ch.cameraId] = fallbackTimer;
+                        qDebug() << "MainWindow: Camera" << ch.cameraId
+                                 << "(auto-start) using config source:" << src
+                                 << "fallback:" << ch.previewUrl << "(12s timeout)";
+                    } else {
+                        qDebug() << "MainWindow: Camera" << ch.cameraId
+                                 << "(auto-start) using config source:" << src << "(no fallback)";
+                    }
+                } else {
+                    if (ch.cameraId < mVideoWidgets.size())
+                        mVideoWidgets[ch.cameraId]->setSourceLabel(QString());
+                }
+
+                mCameraThreads[ch.cameraId]->requestStart(src);
             } else if (mImageStreamThreads.contains(ch.cameraId)) {
-                QString url = ch.snapshotUrl.isEmpty() ? ch.previewUrl : ch.snapshotUrl;
+                QString url = resolveCameraSource(ch.cameraId);
+                QString fbUrl = ch.snapshotUrl.isEmpty() ? ch.previewUrl : ch.snapshotUrl;
+                if (url.isEmpty()) url = fbUrl;
+
+                // Source label: show CFG whenever config has a source
+                bool usingConfig = hasConfigSource(ch.cameraId);
+                if (usingConfig) {
+                    if (ch.cameraId < mVideoWidgets.size())
+                        mVideoWidgets[ch.cameraId]->setSourceLabel("CFG");
+                    // Set up fallback only if config source differs from fallback URL
+                    if (!fbUrl.isEmpty() && url != fbUrl) {
+                        mCameraFallbackSources[ch.cameraId] = fbUrl;
+                        auto* fallbackTimer = new QTimer(this);
+                        fallbackTimer->setSingleShot(true);
+                        connect(fallbackTimer, &QTimer::timeout, this, [this, camId = ch.cameraId]() {
+                            tryFallbackSource(camId);
+                        });
+                        fallbackTimer->start(12000);
+                        mCameraSourceFallbackTimers[ch.cameraId] = fallbackTimer;
+                        qDebug() << "MainWindow: Camera" << ch.cameraId
+                                 << "(auto-start image_stream) using config source:" << url
+                                 << "fallback:" << fbUrl << "(12s timeout)";
+                    } else {
+                        qDebug() << "MainWindow: Camera" << ch.cameraId
+                                 << "(auto-start image_stream) using config source:" << url << "(no fallback)";
+                    }
+                } else {
+                    if (ch.cameraId < mVideoWidgets.size())
+                        mVideoWidgets[ch.cameraId]->setSourceLabel(QString());
+                }
+
                 mImageStreamThreads[ch.cameraId]->requestStart(url);
             } else {
                 continue;
@@ -928,6 +1221,16 @@ void MainWindow::onConfidenceThresholdChanged(int cameraId, float threshold)
 void MainWindow::onDisplayFrameReady(const FrameData& frame)
 {
     int camId = frame.cameraId;
+
+    // First successful frame — cancel the source fallback timer
+    if (mCameraSourceFallbackTimers.contains(camId)) {
+        mCameraSourceFallbackTimers[camId]->stop();
+        delete mCameraSourceFallbackTimers[camId];
+        mCameraSourceFallbackTimers.remove(camId);
+        mCameraFallbackSources.remove(camId);
+        qDebug() << "MainWindow: Camera" << camId << "config source verified, fallback cancelled";
+    }
+
     if (camId >= 0 && camId < mVideoWidgets.size()) {
         mVideoWidgets[camId]->updateDisplayFrame(frame);
     }
@@ -971,33 +1274,63 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
         }
     }
 
+    // Run detections through the alert filter pipeline
     QVector<Detection> defectDetections;
     float bestDefectConf = 0.0f;
-    for (const auto& det : result.detections) {
-        if (det.filtered || det.classId != 1)
-            continue;
-        defectDetections.append(det);
-        if (det.confidence > bestDefectConf)
-            bestDefectConf = det.confidence;
+    if (mAlertPipelines.contains(camId)) {
+        defectDetections = mAlertPipelines[camId]->filter(result.detections);
+        for (const auto& det : defectDetections) {
+            if (det.confidence > bestDefectConf)
+                bestDefectConf = det.confidence;
+        }
+    } else {
+        // Fallback: no pipeline configured, use legacy hardcoded behavior
+        for (const auto& det : result.detections) {
+            if (det.filtered || det.classId != 1)
+                continue;
+            QVector<Detection> temp;
+            temp.append(det); // unused
+            defectDetections.append(det);
+            if (det.confidence > bestDefectConf)
+                bestDefectConf = det.confidence;
+        }
     }
 
-    // One inference result containing any class-1 detection creates one
+    // Apply per-camera minimum confidence threshold from alert config
+    float minConf = 0.6f;
+    if (mAlertPipelines.contains(camId))
+        minConf = mAlertPipelines[camId]->config().minConfidence;
+
+    // Cache latest defect detections for periodic alert snapshot timer
+    mLatestDefectDetections[camId] = defectDetections;
+    mLatestDefectConf[camId] = bestDefectConf;
+
+    // One inference result containing any defect detection creates one
     // request. AlarmController serializes playback and enforces the global
     // 10-second cooldown across all cameras.
     if (!defectDetections.isEmpty()) {
         // mAlarmController->requestAlarm();
         // Independent QThread-relay player (coexists with AlarmController):
-        // one worker thread per frame that contains any class-1 detection.
+        // one worker thread per frame that contains any defect detection.
         mThreadedSoundPlayer->trigger();
     }
 
-    if (bestDefectConf >= 0.6f && camId < mVideoWidgets.size()) {
+    if (bestDefectConf >= minConf && camId < mVideoWidgets.size()) {
+        // Determine the actual classId of the highest-confidence defect
+        int defectClassId = 1;
+        for (const auto& det : defectDetections) {
+            if (det.confidence >= bestDefectConf) {
+                defectClassId = det.classId;
+                break;
+            }
+        }
+
         QImage thumbnail = mVideoWidgets[camId]->grabThumbnail(100);
         if (camName.isEmpty() && mChannelInfos.contains(camId))
             camName = mChannelInfos[camId].name;
         if (camName.isEmpty())
             camName = QString("Camera %1").arg(camId + 1);
-        mAlertPanel->addAlert(camId, camName, 1, bestDefectConf, thumbnail);
+        mAlertPanel->addAlert(camId, camName, defectClassId, bestDefectConf, thumbnail);
 
         QImage frame = mVideoWidgets[camId]->grabFullFrame();
         if (!frame.isNull()) {
@@ -1018,7 +1351,29 @@ void MainWindow::onDisplayResultReady(const DisplayResult& result)
         return;
 
     if (camId >= 0 && camId < mVideoWidgets.size()) {
-        mVideoWidgets[camId]->updateDetectionOverlay(result);
+        // Apply alert filter pipeline to display detections so that
+        // defect boxes failing the filter are hidden from the video widget.
+        if (mAlertPipelines.contains(camId)) {
+            DisplayResult filtered = result;
+            QVector<Detection> passed = mAlertPipelines[camId]->filter(result.detections);
+            const auto& defectIds = mAlertPipelines[camId]->config().defectClassIds;
+            for (auto& det : filtered.detections) {
+                if (!defectIds.contains(det.classId))
+                    continue;
+                bool inPassed = false;
+                for (const auto& p : passed) {
+                    if (p.trackId == det.trackId && p.classId == det.classId) {
+                        inPassed = true;
+                        break;
+                    }
+                }
+                if (!inPassed)
+                    det.filtered = true;
+            }
+            mVideoWidgets[camId]->updateDetectionOverlay(filtered);
+        } else {
+            mVideoWidgets[camId]->updateDetectionOverlay(result);
+        }
     } else {
         qWarning() << "MainWindow::onDisplayResultReady: Invalid camera ID" << camId;
     }

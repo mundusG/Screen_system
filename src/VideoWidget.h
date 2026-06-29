@@ -26,6 +26,7 @@ public:
     QImage grabFullFrame() const;
 
     void setSelected(bool selected);
+    void setSourceLabel(const QString& label) { mSourceLabel = label; update(); }
 
 signals:
     void confidenceThresholdChanged(int cameraId, float threshold);
@@ -76,6 +77,7 @@ private:
     bool    mHasSignal              = false;
     bool    mHasDetections          = false;
     int     mDetectionCount         = 0;
+    QString mSourceLabel;              // "CFG" or "PRV" for source type display
 
     QTimer* mTickTimer = nullptr;
     float   mLivePulse = 1.0f;

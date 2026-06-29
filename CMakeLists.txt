@@ -39,6 +39,7 @@ set(SOURCES
     src/ThreadedSoundPlayer.cpp
     src/DefectImageStore.cpp
     src/DefectImageBrowserDialog.cpp
+    src/AlertFilter.cpp
 )
 
 set(HEADERS
@@ -64,6 +65,7 @@ set(HEADERS
     src/ThreadedSoundPlayer.h
     src/DefectImageStore.h
     src/DefectImageBrowserDialog.h
+    src/AlertFilter.h
 )
 
 # Qt resources

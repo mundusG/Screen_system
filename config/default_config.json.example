@@ -54,6 +54,21 @@
             "smoothingAlpha": 0.3,
             "trackMaxLost": 5,
             "inferenceIntervalMs": 1000,
+            "alert_snapshot_interval_ms": 5000,
+            "alert_config": {
+                "enabled": true,
+                "defect_class_ids": [1],
+                "min_confidence": 0.6,
+                "filters": [
+                    {
+                        "_comment": "示例: 缺陷框中心必须在箱子框内才告警。设置 enabled=true 启用",
+                        "type": "containment",
+                        "enabled": false,
+                        "reference_class_ids": [0],
+                        "mode": "center_inside"
+                    }
+                ]
+            },
             "classColors": {
                 "0": "#00FF00",
                 "1": "#FF0000"
@@ -70,6 +85,13 @@
             "smoothingAlpha": 0.3,
             "trackMaxLost": 5,
             "inferenceIntervalMs": 1000,
+            "alert_snapshot_interval_ms": 5000,
+            "alert_config": {
+                "enabled": true,
+                "defect_class_ids": [1],
+                "min_confidence": 0.6,
+                "filters": []
+            },
             "classColors": {
                 "0": "#00FF00",
                 "1": "#FF0000"
@@ -86,6 +108,13 @@
             "smoothingAlpha": 0.3,
             "trackMaxLost": 5,
             "inferenceIntervalMs": 1000,
+            "alert_snapshot_interval_ms": 5000,
+            "alert_config": {
+                "enabled": true,
+                "defect_class_ids": [1],
+                "min_confidence": 0.6,
+                "filters": []
+            },
             "classColors": {
                 "0": "#00FF00",
                 "1": "#FF0000"
@@ -102,6 +131,13 @@
             "smoothingAlpha": 0.3,
             "trackMaxLost": 5,
             "inferenceIntervalMs": 1000,
+            "alert_snapshot_interval_ms": 5000,
+            "alert_config": {
+                "enabled": true,
+                "defect_class_ids": [1],
+                "min_confidence": 0.6,
+                "filters": []
+            },
             "classColors": {
                 "0": "#00FF00",
                 "1": "#FF0000"
@@ -118,6 +154,13 @@
             "smoothingAlpha": 0.3,
             "trackMaxLost": 5,
             "inferenceIntervalMs": 1000,
+            "alert_snapshot_interval_ms": 5000,
+            "alert_config": {
+                "enabled": true,
+                "defect_class_ids": [1],
+                "min_confidence": 0.6,
+                "filters": []
+            },
             "classColors": {
                 "0": "#00FF00",
                 "1": "#FF0000"
@@ -134,6 +177,13 @@
             "smoothingAlpha": 0.3,
             "trackMaxLost": 5,
             "inferenceIntervalMs": 1000,
+            "alert_snapshot_interval_ms": 5000,
+            "alert_config": {
+                "enabled": true,
+                "defect_class_ids": [1],
+                "min_confidence": 0.6,
+                "filters": []
+            },
             "classColors": {
                 "0": "#00FF00",
                 "1": "#FF0000"
@@ -150,6 +200,13 @@
             "smoothingAlpha": 0.3,
             "trackMaxLost": 5,
             "inferenceIntervalMs": 1000,
+            "alert_snapshot_interval_ms": 5000,
+            "alert_config": {
+                "enabled": true,
+                "defect_class_ids": [1],
+                "min_confidence": 0.6,
+                "filters": []
+            },
             "classColors": {
                 "0": "#00FF00",
                 "1": "#FF0000"
@@ -166,6 +223,13 @@
             "smoothingAlpha": 0.3,
             "trackMaxLost": 5,
             "inferenceIntervalMs": 1000,
+            "alert_snapshot_interval_ms": 5000,
+            "alert_config": {
+                "enabled": true,
+                "defect_class_ids": [1],
+                "min_confidence": 0.6,
+                "filters": []
+            },
             "classColors": {
                 "0": "#00FF00",
                 "1": "#FF0000"

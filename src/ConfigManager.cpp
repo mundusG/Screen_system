@@ -449,6 +449,31 @@ CameraConfig ConfigManager::parseCameraJson(const QJsonObject& obj, int defaultI
     cfg.inferenceIntervalMs  = obj["inferenceIntervalMs"].toInt(1000);
     cfg.snapshotUrl          = obj["snapshot_url"].toString("");
     cfg.snapshotIntervalMs   = obj["snapshot_interval_ms"].toInt(1000);
+    cfg.alertSnapshotIntervalMs = obj["alert_snapshot_interval_ms"].toInt(0);
+
+    // Parse alert_config sub-object
+    QJsonObject alertObj = obj["alert_config"].toObject();
+    cfg.alertConfig.enabled = alertObj["enabled"].toBool(true);
+    QJsonArray defectIds = alertObj["defect_class_ids"].toArray();
+    if (!defectIds.isEmpty()) {
+        cfg.alertConfig.defectClassIds.clear();
+        for (const auto& v : defectIds)
+            cfg.alertConfig.defectClassIds.append(v.toInt());
+    }
+    cfg.alertConfig.minConfidence = static_cast<float>(alertObj["min_confidence"].toDouble(0.6));
+    cfg.alertConfig.filters = alertObj["filters"].toArray();
+
+    // Backward compat: if old "defect_requires_box" is true and no filters defined,
+    // auto-generate an equivalent containment filter
+    if (obj["defect_requires_box"].toBool(false) && cfg.alertConfig.filters.isEmpty()) {
+        QJsonObject filter;
+        filter["type"] = QString("containment");
+        filter["enabled"] = true;
+        QJsonArray refs; refs.append(0);
+        filter["reference_class_ids"] = refs;
+        filter["mode"] = QString("center_inside");
+        cfg.alertConfig.filters.append(filter);
+    }
 
     // Parse class colors
     QJsonObject colors = obj["classColors"].toObject();
@@ -483,6 +508,17 @@ QJsonObject ConfigManager::cameraToJson(const CameraConfig& cfg) const
     obj["inferenceIntervalMs"]  = cfg.inferenceIntervalMs;
     obj["snapshot_url"]         = cfg.snapshotUrl;
     obj["snapshot_interval_ms"] = cfg.snapshotIntervalMs;
+    obj["alert_snapshot_interval_ms"] = cfg.alertSnapshotIntervalMs;
+
+    QJsonObject alertObj;
+    alertObj["enabled"] = cfg.alertConfig.enabled;
+    QJsonArray ids;
+    for (int id : cfg.alertConfig.defectClassIds)
+        ids.append(id);
+    alertObj["defect_class_ids"] = ids;
+    alertObj["min_confidence"] = static_cast<double>(cfg.alertConfig.minConfidence);
+    alertObj["filters"] = cfg.alertConfig.filters;
+    obj["alert_config"] = alertObj;
 
     QJsonObject colors;
     for (auto it = cfg.classColors.begin(); it != cfg.classColors.end(); ++it) {
