@@ -15,6 +15,7 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QShowEvent>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
@@ -210,6 +211,8 @@ DefectImageItemWidget::DefectImageItemWidget(const DefectImageRecord& record, QW
     thumb->setAlignment(Qt::AlignCenter);
     thumb->setStyleSheet("QLabel { background: #050812; border: 1px solid #1a3a60; color: #607090; }");
 
+    // Main image is already scaled to ~960px max — QImageReader::setScaledSize
+    // does efficient decode-at-size, so no separate thumbnail file is needed.
     QImageReader reader(record.filePath);
     QSize sourceSize = reader.size();
     if (sourceSize.isValid())
@@ -305,8 +308,16 @@ DefectImageBrowserDialog::DefectImageBrowserDialog(DefectImageStore* store, QWid
 
     connect(mPrevButton, &QPushButton::clicked, this, &DefectImageBrowserDialog::goPrev);
     connect(mNextButton, &QPushButton::clicked, this, &DefectImageBrowserDialog::goNext);
+
+    // Debounce: batch rapid-fire recordsChanged signals (multiple cameras
+    // detecting defects simultaneously) into a single refresh every 500ms.
+    mDebounceTimer = new QTimer(this);
+    mDebounceTimer->setSingleShot(true);
+    connect(mDebounceTimer, &QTimer::timeout, this, &DefectImageBrowserDialog::onRecordsChanged);
     if (mStore)
-        connect(mStore, &DefectImageStore::recordsChanged, this, &DefectImageBrowserDialog::refresh);
+        connect(mStore, &DefectImageStore::recordsChanged, this, [this]() {
+            mDebounceTimer->start(500);
+        });
 
     setStyleSheet(
         QString("QDialog { background-color: %1; color: %2; }"
@@ -362,6 +373,55 @@ void DefectImageBrowserDialog::refresh()
 
     mScrollArea->verticalScrollBar()->setValue(0);
     updatePager();
+    if (mStore)
+        mLastTotalCount = mStore->count();
+}
+
+void DefectImageBrowserDialog::onRecordsChanged()
+{
+    if (!mStore)
+        return;
+
+    int total = mStore->count();
+    int delta = total - mLastTotalCount;
+
+    // Page-0 with only new items added: insert incrementally.
+    // Any other case (page changed, items removed, etc.): full rebuild.
+    if (mPageIndex == 0 && delta > 0 && mLastTotalCount > 0) {
+        // Preserve scroll position: new items push existing content down.
+        int savedScroll = mScrollArea->verticalScrollBar()->value();
+        insertNewItems(delta);
+        // Each item: 92px height + 8px layout spacing = 100px shift per item
+        mScrollArea->verticalScrollBar()->setValue(savedScroll + delta * 100);
+        // Trim excess items beyond page size
+        while (mListLayout->count() - 1 > mPageSize) {
+            int lastIdx = mListLayout->count() - 2; // -2: skip trailing stretch
+            QLayoutItem* item = mListLayout->takeAt(lastIdx);
+            if (item->widget())
+                item->widget()->deleteLater();
+            delete item;
+        }
+        mLastTotalCount = total;
+        updatePager();
+    } else {
+        refresh();
+    }
+}
+
+void DefectImageBrowserDialog::insertNewItems(int count)
+{
+    if (!mStore || count <= 0)
+        return;
+
+    // Newest records are at the front — get exactly |count| of them.
+    QVector<DefectImageRecord> records = mStore->recordsForPage(0, count);
+    // Insert in reverse order so the newest appears at the top.
+    for (int i = records.size() - 1; i >= 0; --i) {
+        auto* item = new DefectImageItemWidget(records[i], mListContainer);
+        connect(item, &DefectImageItemWidget::clicked,
+                this, &DefectImageBrowserDialog::openPreview);
+        mListLayout->insertWidget(0, item);
+    }
 }
 
 void DefectImageBrowserDialog::goPrev()

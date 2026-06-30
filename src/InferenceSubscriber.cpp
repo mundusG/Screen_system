@@ -232,6 +232,14 @@ bool InferenceSubscriber::decodeInferenceResult(const QByteArray& json, Inferenc
         result.detections.append(det);
     }
 
+    // Parse embedded JPEG thumbnail (base64-encoded) from inference device.
+    // When present, this guarantees frame pixels and detection boxes are from
+    // the same capture — eliminating frame/box misalignment in image_stream mode.
+    if (obj.contains("frame_jpeg")) {
+        result.frameJpeg = QByteArray::fromBase64(
+            obj["frame_jpeg"].toString().toUtf8());
+    }
+
     return true;
 }
 

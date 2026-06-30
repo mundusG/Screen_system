@@ -18,6 +18,8 @@
 #include <QThreadPool>
 #include <QRunnable>
 
+#include <opencv2/imgproc.hpp>
+
 #include <algorithm>
 
 namespace {
@@ -32,7 +34,7 @@ struct SaveRequest {
     QString location;
     QDateTime timestamp;
     float confidence = 0.0f;
-    QImage frame;
+    cv::Mat frame;
     QVector<Detection> detections;
 };
 
@@ -117,12 +119,32 @@ public:
 
     void run() override
     {
-        if (mRequest.frame.isNull()) {
+        if (mRequest.frame.empty()) {
             postFailed(QStringLiteral("empty frame"));
             return;
         }
 
-        QImage image = mRequest.frame.convertToFormat(QImage::Format_RGB32);
+        // Scale down on the worker thread: 960px is enough to read box labels.
+        // cv::resize with INTER_AREA is fast on ARM (no floating-point per pixel).
+        constexpr int kMaxDim = 960;
+        cv::Mat scaled;
+        int w = mRequest.frame.cols;
+        int h = mRequest.frame.rows;
+        if (w > kMaxDim || h > kMaxDim) {
+            double scale = static_cast<double>(kMaxDim) / std::max(w, h);
+            cv::resize(mRequest.frame, scaled, cv::Size(), scale, scale, cv::INTER_AREA);
+        } else {
+            scaled = mRequest.frame;
+        }
+
+        // BGR (OpenCV native) → RGB QImage in worker thread; main thread never
+        // pays for colour conversion or deep copies.
+        cv::Mat rgb;
+        cv::cvtColor(scaled, rgb, cv::COLOR_BGR2RGB);
+        QImage image(rgb.data, rgb.cols, rgb.rows,
+                     static_cast<int>(rgb.step), QImage::Format_RGB888);
+        image = image.copy(); // detach from rgb Mat before it goes out of scope
+
         drawDefectBoxes(image, mRequest.detections);
 
         QDir dir(QFileInfo(mRequest.filePath).absolutePath());
@@ -131,7 +153,9 @@ public:
             return;
         }
 
-        if (!image.save(mRequest.filePath, "JPG", 90)) {
+        // Q75 is sufficient for review (box positions / labels are clear) and
+        // encodes ~2× faster than Q90 on ARM devices.
+        if (!image.save(mRequest.filePath, "JPG", 75)) {
             postFailed(QStringLiteral("image save failed"));
             return;
         }
@@ -255,14 +279,14 @@ QString DefectImageStore::locationName(int cameraId, const QString& fallbackName
 
 void DefectImageStore::saveDefectImage(int cameraId,
                                        const QString& fallbackName,
-                                       const QImage& frame,
+                                       const cv::Mat& frame,
                                        const QVector<Detection>& detections,
                                        float confidence,
                                        qint64 timestampMs)
 {
-    if (frame.isNull() || detections.isEmpty()) {
+    if (frame.empty() || detections.isEmpty()) {
         qWarning() << "DefectImageStore::saveDefectImage: skipping -"
-                   << "frame.null:" << frame.isNull()
+                   << "frame.empty: true"
                    << "detections.empty:" << detections.isEmpty();
         return;
     }

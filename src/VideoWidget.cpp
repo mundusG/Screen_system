@@ -34,6 +34,20 @@ VideoWidget::VideoWidget(int cameraId, const QString& title, QWidget* parent)
             mLivePulse += 0.05f;
             if (mLivePulse >= 1.0f) { mLivePulse = 1.0f; mLivePulseDir = true; }
         }
+
+        // Time-based detection clearing: if no detection update for 2 seconds,
+        // clear boxes regardless of pipeline state (MQTT disconnect, etc.)
+        if (mHasDetections) {
+            qint64 now = QDateTime::currentMSecsSinceEpoch();
+            if (now - mLastDetectionTime > kDetectionTimeoutMs) {
+                mHasDetections = false;
+                mDetectionCount = 0;
+                {
+                    QMutexLocker locker(&mDetectionMutex);
+                    mDetections.clear();
+                }
+            }
+        }
         update();
     });
     mTickTimer->start(80);
@@ -59,6 +73,21 @@ QImage VideoWidget::grabFullFrame() const
     cv::cvtColor(mCurrentFrame, rgb, cv::COLOR_BGR2RGB);
     QImage img(rgb.data, rgb.cols, rgb.rows, static_cast<int>(rgb.step), QImage::Format_RGB888);
     return img.copy();
+}
+
+cv::Mat VideoWidget::grabFrameForSave(int maxDim) const
+{
+    QMutexLocker locker(&mFrameMutex);
+    if (mCurrentFrame.empty()) return {};
+    int w = mCurrentFrame.cols;
+    int h = mCurrentFrame.rows;
+    if (maxDim > 0 && (w > maxDim || h > maxDim)) {
+        double scale = static_cast<double>(maxDim) / std::max(w, h);
+        cv::Mat scaled;
+        cv::resize(mCurrentFrame, scaled, cv::Size(), scale, scale, cv::INTER_AREA);
+        return scaled; // already a new Mat, no extra clone needed
+    }
+    return mCurrentFrame.clone();
 }
 
 int VideoWidget::heightForWidth(int w) const { return w * 9 / 16; }

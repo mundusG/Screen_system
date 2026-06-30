@@ -157,6 +157,9 @@ struct InferenceResult {
     float            inferenceTimeMs = 0.0f;
     int              frameWidth  = 0;  // original frame width (for coordinate normalization)
     int              frameHeight = 0;  // original frame height
+    QByteArray       frameJpeg;       // optional: base64-decoded JPEG thumbnail
+                                      // from inference device; when present, guarantees
+                                      // frame and boxes are from the same capture.
 };
 
 /// Smoothed result ready for display

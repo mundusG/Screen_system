@@ -8,6 +8,7 @@
 #include <QMutex>
 #include <QSize>
 #include <QVector>
+#include <opencv2/core.hpp>
 #include "Types.h"
 
 struct DefectImageRecord {
@@ -39,7 +40,7 @@ public:
 
     void saveDefectImage(int cameraId,
                          const QString& fallbackName,
-                         const QImage& frame,
+                         const cv::Mat& frame,
                          const QVector<Detection>& detections,
                          float confidence,
                          qint64 timestampMs = 0);

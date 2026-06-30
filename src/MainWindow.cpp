@@ -17,6 +17,7 @@
 #include "DefectImageBrowserDialog.h"
 #include "AlertFilter.h"
 #include "Theme.h"
+#include <opencv2/imgcodecs.hpp>
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -373,6 +374,11 @@ bool MainWindow::setupCameraPipeline(int cameraId, const CameraConfig& config)
 
     // Determine camera mode: use camera-specific mode if set, otherwise use system mode
     QString cameraMode = config.mode.isEmpty() ? mSystemMode : config.mode;
+
+    // Image-stream mode fetches at ~1s intervals — EMA smoothing is
+    // counterproductive at this frame rate, so force alpha=1 (follow raw box).
+    if (cameraMode == "image_stream")
+        smoother->setAlpha(1.0f);
 
     // Only setup inference engine and camera capture for local_inference mode
     if (cameraMode == "local_inference") {
@@ -1261,6 +1267,25 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
         qWarning() << "MainWindow::onInferenceFinished: No SmoothingFilter for camera" << camId;
     }
 
+    // When the inference device embedded a JPEG thumbnail in the MQTT message,
+    // decode it and push it as the display frame. This guarantees the frame pixels
+    // and detection boxes are from the same capture — eliminating the misalignment
+    // that occurs when the display fetches frames independently via HTTP/RTSP.
+    cv::Mat alignedFrame;
+    if (!result.frameJpeg.isEmpty() && camId < mVideoWidgets.size()) {
+        const QByteArray& jpeg = result.frameJpeg;
+        cv::Mat raw(1, jpeg.size(), CV_8UC1, const_cast<char*>(jpeg.constData()));
+        alignedFrame = cv::imdecode(raw, cv::IMREAD_COLOR);
+        if (!alignedFrame.empty()) {
+            FrameData fd;
+            fd.cameraId   = camId;
+            fd.image      = alignedFrame;
+            fd.timestamp  = result.timestamp;
+            fd.frameIndex = result.frameIndex;
+            mVideoWidgets[camId]->updateDisplayFrame(fd);
+        }
+    }
+
     if (camId < mVideoWidgets.size()) {
         mVideoWidgets[camId]->updateInferenceTime(result.inferenceTimeMs);
     }
@@ -1284,39 +1309,26 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
                 bestDefectConf = det.confidence;
         }
     } else {
-        // Fallback: no pipeline configured, use legacy hardcoded behavior
         for (const auto& det : result.detections) {
             if (det.filtered || det.classId != 1)
                 continue;
-            QVector<Detection> temp;
-            temp.append(det); // unused
             defectDetections.append(det);
             if (det.confidence > bestDefectConf)
                 bestDefectConf = det.confidence;
         }
     }
 
-    // Apply per-camera minimum confidence threshold from alert config
     float minConf = 0.6f;
     if (mAlertPipelines.contains(camId))
         minConf = mAlertPipelines[camId]->config().minConfidence;
 
-    // Cache latest defect detections for periodic alert snapshot timer
     mLatestDefectDetections[camId] = defectDetections;
     mLatestDefectConf[camId] = bestDefectConf;
 
-    // One inference result containing any defect detection creates one
-    // request. AlarmController serializes playback and enforces the global
-    // 10-second cooldown across all cameras.
-    if (!defectDetections.isEmpty()) {
-        // mAlarmController->requestAlarm();
-        // Independent QThread-relay player (coexists with AlarmController):
-        // one worker thread per frame that contains any defect detection.
+    if (!defectDetections.isEmpty())
         mThreadedSoundPlayer->trigger();
-    }
 
     if (bestDefectConf >= minConf && camId < mVideoWidgets.size()) {
-        // Determine the actual classId of the highest-confidence defect
         int defectClassId = 1;
         for (const auto& det : defectDetections) {
             if (det.confidence >= bestDefectConf) {
@@ -1332,12 +1344,19 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
             camName = QString("Camera %1").arg(camId + 1);
         mAlertPanel->addAlert(camId, camName, defectClassId, bestDefectConf, thumbnail);
 
-        QImage frame = mVideoWidgets[camId]->grabFullFrame();
-        if (!frame.isNull()) {
-            mDefectImageStore->saveDefectImage(
-                camId, camName, frame, defectDetections, bestDefectConf, result.timestamp);
+        // Prefer the MQTT-embedded thumbnail frame (aligned with detections);
+        // fall back to grabbing the current display frame when not available.
+        cv::Mat saveFrame;
+        if (!alignedFrame.empty()) {
+            saveFrame = alignedFrame;
         } else {
-            qWarning() << "MainWindow: grabFullFrame returned null for camera" << camId
+            saveFrame = mVideoWidgets[camId]->grabFrameForSave(960);
+        }
+        if (!saveFrame.empty()) {
+            mDefectImageStore->saveDefectImage(
+                camId, camName, saveFrame, defectDetections, bestDefectConf, result.timestamp);
+        } else {
+            qWarning() << "MainWindow: No frame available for camera" << camId
                        << "- defect image NOT saved";
         }
     }

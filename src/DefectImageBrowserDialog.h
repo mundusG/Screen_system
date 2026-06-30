@@ -40,6 +40,7 @@ public:
 
 private slots:
     void refresh();
+    void onRecordsChanged();
     void goPrev();
     void goNext();
     void openPreview(const DefectImageRecord& record);
@@ -47,6 +48,7 @@ private slots:
 private:
     void clearRows();
     void updatePager();
+    void insertNewItems(int count);
 
     DefectImageStore* mStore = nullptr;
     int mPageIndex = 0;
@@ -59,6 +61,9 @@ private:
     QPushButton* mPrevButton = nullptr;
     QPushButton* mNextButton = nullptr;
     QLabel* mPageLabel = nullptr;
+
+    QTimer* mDebounceTimer = nullptr;
+    int mLastTotalCount = 0;
 };
 
 #endif // DEFECTIMAGEBROWSERDIALOG_H
