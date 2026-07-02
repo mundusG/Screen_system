@@ -1344,19 +1344,11 @@ void MainWindow::onInferenceFinished(const InferenceResult& result)
             camName = QString("Camera %1").arg(camId + 1);
         mAlertPanel->addAlert(camId, camName, defectClassId, bestDefectConf, thumbnail);
 
-        // Prefer the MQTT-embedded thumbnail frame (aligned with detections);
-        // fall back to grabbing the current display frame when not available.
-        cv::Mat saveFrame;
-        if (!alignedFrame.empty()) {
-            saveFrame = alignedFrame;
+        if (!result.frameJpeg.isEmpty()) {
+            mDefectImageStore->saveDefectJpeg(
+                camId, camName, result.frameJpeg, bestDefectConf, result.timestamp);
         } else {
-            saveFrame = mVideoWidgets[camId]->grabFrameForSave(960);
-        }
-        if (!saveFrame.empty()) {
-            mDefectImageStore->saveDefectImage(
-                camId, camName, saveFrame, defectDetections, bestDefectConf, result.timestamp);
-        } else {
-            qWarning() << "MainWindow: No frame available for camera" << camId
+            qWarning() << "MainWindow: No JPEG frame for camera" << camId
                        << "- defect image NOT saved";
         }
     }

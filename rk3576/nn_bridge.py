@@ -32,6 +32,9 @@ import sys
 import time
 import signal
 import threading
+import base64
+import numpy as np
+import cv2
 import paho.mqtt.client as mqtt
 from loguru import logger
 
@@ -99,6 +102,9 @@ class NNBridge:
 
         # chid → display slot mapping (optional, falls back to chid - 1)
         self.channel_map = self.config.get('channel_map', {})
+
+        # Defect class IDs — embed a JPEG thumbnail when these classes are detected
+        self.defect_class_ids = set(self.config.get('defect_class_ids', [1]))
 
         # Thread-safety: active_channels is read/written by both the
         # main thread and the paho MQTT callback thread.
@@ -334,6 +340,11 @@ class NNBridge:
         if chid < 0:
             return
 
+        # Frame metadata for reading raw frame file (used when embedding JPEG)
+        dwidth = param.get('dwidth', 0)
+        dheight = param.get('dheight', 0)
+        seq = param.get('seq', 0)
+
         now = time.time()
 
         # ── Single lock: register + state + rate limit + frame count ──
@@ -410,6 +421,52 @@ class NNBridge:
             'detections': detections,
             'inference_time_ms': 0,
         }
+
+        # Embed a JPEG thumbnail when a defect class is detected. Draw
+        # detection boxes on the frame so the display side can save it
+        # directly without re-processing — same effect as dposter's alarm
+        # snapshot but delivered inline via MQTT.
+        has_defect = any(d.get('cid', 0) in self.defect_class_ids
+                         for d in nn_output)
+        if has_defect and dwidth > 0 and dheight > 0:
+            raw_path = f"/mpp/mem/ch{chid}_{seq}.raw"
+            try:
+                if os.path.exists(raw_path):
+                    raw_data = np.fromfile(raw_path, dtype=np.uint8)
+                    raw_data = raw_data.reshape(dheight, dwidth, 3)
+                    frame = cv2.cvtColor(raw_data, cv2.COLOR_RGB2BGR)
+
+                    # Draw detection boxes on the raw frame (same as dposter output)
+                    for det in nn_output:
+                        x1 = int(det.get('x1', 0) * dwidth)
+                        y1 = int(det.get('y1', 0) * dheight)
+                        x2 = int(det.get('x2', 0) * dwidth)
+                        y2 = int(det.get('y2', 0) * dheight)
+                        conf = det.get('conf', 0)
+                        cid = det.get('cid', 0)
+                        cls_name = det.get('class_name', f'cls_{cid}')
+
+                        color = (0, 0, 255) if cid in self.defect_class_ids else (0, 255, 0)
+                        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+
+                        label = f"{cls_name} {conf:.0%}"
+                        (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+                        cv2.rectangle(frame, (x1, y1 - th - 4), (x1 + tw + 4, y1), color, -1)
+                        cv2.putText(frame, label, (x1 + 2, y1 - 4),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+                    h, w = frame.shape[:2]
+                    if w > 640:
+                        new_h = int(h * 640 / w)
+                        frame = cv2.resize(frame, (640, new_h),
+                                          interpolation=cv2.INTER_AREA)
+                    _, jpeg_buf = cv2.imencode('.jpg', frame,
+                                               [cv2.IMWRITE_JPEG_QUALITY, 75])
+                    output_msg['frame_jpeg'] = base64.b64encode(jpeg_buf).decode('ascii')
+                else:
+                    logger.debug("cam[{}] raw frame file not found: {}", camera_id, raw_path)
+            except Exception:
+                logger.exception("cam[{}] Failed to embed frame_jpeg", camera_id)
 
         # Skip publish if remote broker is disconnected — prevents
         # unbounded message queue buildup in paho's internal buffer.

@@ -241,7 +241,7 @@ class Mainloop(threading.Thread):
         return is_pub
     
     def run(self):
-        logger.info("m58 start process....")
+        logger.info("m200 start process....")
         seq = 0
         while True:
             msg = self.in_queue.get()

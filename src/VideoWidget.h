@@ -25,11 +25,6 @@ public:
     QImage grabThumbnail(int maxWidth = 120) const;
     QImage grabFullFrame() const;
 
-    /// Return a scaled BGR frame for the save pipeline.
-    /// The BGR→RGB conversion and final scaling happen on the worker thread,
-    /// so the main thread only pays for a lightweight cv::resize + clone.
-    cv::Mat grabFrameForSave(int maxDim = 960) const;
-
     void setSelected(bool selected);
     void setSourceLabel(const QString& label) { mSourceLabel = label; update(); }
 
@@ -66,7 +61,6 @@ private:
     bool    mSelected = false;
 
     cv::Mat            mCurrentFrame;
-    QImage             mDisplayImage;
     mutable QMutex     mFrameMutex;
 
     QVector<Detection> mDetections;

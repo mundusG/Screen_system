@@ -1,198 +1,16 @@
 #include "DefectImageStore.h"
-#include "Theme.h"
 
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QFont>
-#include <QFontMetrics>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QMetaObject>
-#include <QPainter>
-#include <QPointer>
 #include <QRegularExpression>
 #include <QStandardPaths>
-#include <QThreadPool>
-#include <QRunnable>
-
-#include <opencv2/imgproc.hpp>
 
 #include <algorithm>
-
-namespace {
-
-constexpr int DefectClassId = 1;
-
-struct SaveRequest {
-    QPointer<DefectImageStore> store;
-    QString filePath;
-    QString fileName;
-    int cameraId = -1;
-    QString location;
-    QDateTime timestamp;
-    float confidence = 0.0f;
-    cv::Mat frame;
-    QVector<Detection> detections;
-};
-
-static QRectF detectionRect(const Detection& det, const QSize& imageSize)
-{
-    const qreal w = imageSize.width();
-    const qreal h = imageSize.height();
-
-    qreal x = 0.0;
-    qreal y = 0.0;
-    qreal bw = 0.0;
-    qreal bh = 0.0;
-
-    if (det.normalized) {
-        x = det.bbox.left() * w;
-        y = det.bbox.top() * h;
-        bw = det.bbox.width * w;
-        bh = det.bbox.height * h;
-    } else {
-        x = det.bbox.left();
-        y = det.bbox.top();
-        bw = det.bbox.width;
-        bh = det.bbox.height;
-    }
-
-    QRectF rect(x, y, bw, bh);
-    return rect.intersected(QRectF(0, 0, w, h));
-}
-
-static void drawDefectBoxes(QImage& image, const QVector<Detection>& detections)
-{
-    QPainter p(&image);
-    p.setRenderHint(QPainter::Antialiasing, true);
-
-    const int base = std::max(2, std::min(image.width(), image.height()) / 260);
-    QFont font("Sans", std::max(10, base * 5), QFont::Bold);
-    p.setFont(font);
-    QFontMetrics fm(font);
-
-    for (const auto& det : detections) {
-        if (det.classId != DefectClassId || det.filtered)
-            continue;
-
-        QRectF r = detectionRect(det, image.size());
-        if (r.width() <= 1.0 || r.height() <= 1.0)
-            continue;
-
-        QColor color = Theme::alertRed();
-        p.setPen(QPen(color, base + 1));
-        p.setBrush(Qt::NoBrush);
-        p.drawRect(r);
-
-        QString label = QString::fromUtf8("异常 %1%").arg(qRound(det.confidence * 100.0f));
-        int textW = fm.horizontalAdvance(label) + base * 6;
-        int textH = fm.height() + base * 2;
-        int tx = static_cast<int>(r.left());
-        int ty = static_cast<int>(r.top()) - textH - 2;
-        if (ty < 0)
-            ty = static_cast<int>(r.top()) + 2;
-        if (tx + textW > image.width())
-            tx = std::max(0, image.width() - textW - 2);
-
-        QRect labelRect(tx, ty, textW, textH);
-        QColor bg = color;
-        bg.setAlpha(210);
-        p.setPen(Qt::NoPen);
-        p.setBrush(bg);
-        p.drawRoundedRect(labelRect, 3, 3);
-        p.setPen(Qt::white);
-        p.drawText(labelRect.adjusted(base * 3, 0, 0, 0), Qt::AlignVCenter | Qt::AlignLeft, label);
-    }
-}
-
-class SaveImageTask : public QRunnable
-{
-public:
-    explicit SaveImageTask(const SaveRequest& request)
-        : mRequest(request)
-    {
-        setAutoDelete(true);
-    }
-
-    void run() override
-    {
-        if (mRequest.frame.empty()) {
-            postFailed(QStringLiteral("empty frame"));
-            return;
-        }
-
-        // Scale down on the worker thread: 960px is enough to read box labels.
-        // cv::resize with INTER_AREA is fast on ARM (no floating-point per pixel).
-        constexpr int kMaxDim = 960;
-        cv::Mat scaled;
-        int w = mRequest.frame.cols;
-        int h = mRequest.frame.rows;
-        if (w > kMaxDim || h > kMaxDim) {
-            double scale = static_cast<double>(kMaxDim) / std::max(w, h);
-            cv::resize(mRequest.frame, scaled, cv::Size(), scale, scale, cv::INTER_AREA);
-        } else {
-            scaled = mRequest.frame;
-        }
-
-        // BGR (OpenCV native) → RGB QImage in worker thread; main thread never
-        // pays for colour conversion or deep copies.
-        cv::Mat rgb;
-        cv::cvtColor(scaled, rgb, cv::COLOR_BGR2RGB);
-        QImage image(rgb.data, rgb.cols, rgb.rows,
-                     static_cast<int>(rgb.step), QImage::Format_RGB888);
-        image = image.copy(); // detach from rgb Mat before it goes out of scope
-
-        drawDefectBoxes(image, mRequest.detections);
-
-        QDir dir(QFileInfo(mRequest.filePath).absolutePath());
-        if (!dir.exists() && !dir.mkpath(QStringLiteral("."))) {
-            postFailed(QStringLiteral("cannot create storage directory"));
-            return;
-        }
-
-        // Q75 is sufficient for review (box positions / labels are clear) and
-        // encodes ~2× faster than Q90 on ARM devices.
-        if (!image.save(mRequest.filePath, "JPG", 75)) {
-            postFailed(QStringLiteral("image save failed"));
-            return;
-        }
-
-        DefectImageRecord record;
-        record.filePath = mRequest.filePath;
-        record.fileName = mRequest.fileName;
-        record.cameraId = mRequest.cameraId;
-        record.location = mRequest.location;
-        record.timestamp = mRequest.timestamp;
-        record.confidence = mRequest.confidence;
-        record.imageSize = image.size();
-
-        if (mRequest.store) {
-            auto* store = mRequest.store.data();
-            QMetaObject::invokeMethod(store, [store, record]() {
-                store->onAsyncImageSaved(record);
-            }, Qt::QueuedConnection);
-        }
-    }
-
-private:
-    void postFailed(const QString& reason)
-    {
-        if (mRequest.store) {
-            auto* store = mRequest.store.data();
-            const QString path = mRequest.filePath;
-            QMetaObject::invokeMethod(store, [store, path, reason]() {
-                store->onAsyncSaveFailed(path, reason);
-            }, Qt::QueuedConnection);
-        }
-    }
-
-    SaveRequest mRequest;
-};
-
-} // namespace
 
 DefectImageStore::DefectImageStore(QObject* parent)
     : QObject(parent)
@@ -277,19 +95,14 @@ QString DefectImageStore::locationName(int cameraId, const QString& fallbackName
     return QString::fromUtf8("摄像头 %1").arg(cameraId + 1);
 }
 
-void DefectImageStore::saveDefectImage(int cameraId,
+void DefectImageStore::saveDefectJpeg(int cameraId,
                                        const QString& fallbackName,
-                                       const cv::Mat& frame,
-                                       const QVector<Detection>& detections,
+                                       const QByteArray& jpegData,
                                        float confidence,
                                        qint64 timestampMs)
 {
-    if (frame.empty() || detections.isEmpty()) {
-        qWarning() << "DefectImageStore::saveDefectImage: skipping -"
-                   << "frame.empty: true"
-                   << "detections.empty:" << detections.isEmpty();
+    if (jpegData.isEmpty())
         return;
-    }
 
     QString storageDir;
     QString location;
@@ -297,17 +110,26 @@ void DefectImageStore::saveDefectImage(int cameraId,
     {
         QMutexLocker locker(&mMutex);
         if (!mInitialized) {
-            qWarning() << "DefectImageStore::saveDefectImage: NOT initialized, skipping save";
+            qWarning() << "DefectImageStore::saveDefectJpeg: NOT initialized, skipping save";
             return;
         }
+
+        // Rate-limit per camera
+        qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        qint64 last = mLastSaveTimeMs.value(cameraId, 0);
+        if (nowMs - last < mSaveIntervalMs)
+            return;
+        mLastSaveTimeMs[cameraId] = nowMs;
+
         storageDir = mConfig.storageDir;
         location = mConfig.locations.value(cameraId, fallbackName).trimmed();
         sequence = ++mSaveSequence;
     }
 
     if (location.isEmpty())
-        location = fallbackName.trimmed().isEmpty() ? QString::fromUtf8("摄像头 %1").arg(cameraId + 1)
-                                                    : fallbackName.trimmed();
+        location = fallbackName.trimmed().isEmpty()
+            ? QString::fromUtf8("摄像头 %1").arg(cameraId + 1)
+            : fallbackName.trimmed();
 
     QDateTime ts = timestampMs > 0
         ? QDateTime::fromMSecsSinceEpoch(timestampMs)
@@ -325,28 +147,49 @@ void DefectImageStore::saveDefectImage(int cameraId,
         .arg(qBound(0, qRound(confidence * 100.0f), 100));
     QString filePath = makeUniquePath(storageDir, baseName);
 
-    SaveRequest request;
-    request.store = this;
-    request.filePath = filePath;
-    request.fileName = QFileInfo(filePath).fileName();
-    request.cameraId = cameraId;
-    request.location = location;
-    request.timestamp = ts;
-    request.confidence = confidence;
-    request.frame = frame;
-    request.detections = detections;
+    // Write JPEG bytes directly — inference device already drew the boxes
+    QDir dir(QFileInfo(filePath).absolutePath());
+    if (!dir.exists() && !dir.mkpath(QStringLiteral("."))) {
+        qWarning() << "DefectImageStore: cannot create directory for" << filePath;
+        return;
+    }
 
-    qDebug() << "DefectImageStore: enqueuing save for camera" << cameraId
-             << "path:" << filePath
-             << "dets:" << detections.size()
-             << "conf:" << confidence;
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly)) {
+        qWarning() << "DefectImageStore: cannot open" << filePath;
+        return;
+    }
+    file.write(jpegData);
+    file.close();
 
-    QThreadPool::globalInstance()->start(new SaveImageTask(request));
-}
+    qDebug() << "DefectImageStore: saved JPEG" << filePath
+             << "size:" << jpegData.size() << "bytes";
 
-void DefectImageStore::onAsyncImageSaved(const DefectImageRecord& record)
-{
-    qDebug() << "DefectImageStore: image saved OK:" << record.fileName;
+    // Extract image dimensions from JPEG header (fast scan, no full decode)
+    QSize imageSize;
+    if (jpegData.size() > 100) {
+        // Scan for SOF0/SOF2 marker
+        const uchar* d = reinterpret_cast<const uchar*>(jpegData.constData());
+        int len = jpegData.size();
+        for (int i = 2; i < len - 9; ++i) {
+            if (d[i] == 0xFF && (d[i + 1] == 0xC0 || d[i + 1] == 0xC2)) {
+                int h = (d[i + 5] << 8) | d[i + 6];
+                int w = (d[i + 7] << 8) | d[i + 8];
+                imageSize = QSize(w, h);
+                break;
+            }
+        }
+    }
+
+    DefectImageRecord record;
+    record.filePath = filePath;
+    record.fileName = QFileInfo(filePath).fileName();
+    record.cameraId = cameraId;
+    record.location = location;
+    record.timestamp = ts;
+    record.confidence = confidence;
+    record.imageSize = imageSize;
+
     {
         QMutexLocker locker(&mMutex);
         mRecords.prepend(record);
@@ -354,11 +197,6 @@ void DefectImageStore::onAsyncImageSaved(const DefectImageRecord& record)
         enforceLimitLocked();
     }
     emit recordsChanged();
-}
-
-void DefectImageStore::onAsyncSaveFailed(const QString& path, const QString& reason)
-{
-    qWarning() << "DefectImageStore: failed to save" << path << reason;
 }
 
 QString DefectImageStore::resolveConfigPath(const QString& explicitPath)
@@ -470,6 +308,7 @@ bool DefectImageStore::loadConfig(const QString& path)
         }
     }
 
+    mSaveIntervalMs = std::max(1000, root["save_interval_ms"].toInt(mSaveIntervalMs));
     mConfig.maxImages = std::max(1, root["max_images"].toInt(mConfig.maxImages));
     mConfig.pageSize = std::max(1, root["page_size"].toInt(mConfig.pageSize));
 
@@ -489,6 +328,7 @@ void DefectImageStore::applyDefaults()
     mConfig.storageDir.clear();
     mConfig.maxImages = 500;
     mConfig.pageSize = 20;
+    mSaveIntervalMs = 5000;
     mConfig.locations.clear();
     for (int i = 0; i < 8; ++i)
         mConfig.locations[i] = QString::fromUtf8("摄像头 %1").arg(i + 1);

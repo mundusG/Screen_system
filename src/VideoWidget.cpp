@@ -75,21 +75,6 @@ QImage VideoWidget::grabFullFrame() const
     return img.copy();
 }
 
-cv::Mat VideoWidget::grabFrameForSave(int maxDim) const
-{
-    QMutexLocker locker(&mFrameMutex);
-    if (mCurrentFrame.empty()) return {};
-    int w = mCurrentFrame.cols;
-    int h = mCurrentFrame.rows;
-    if (maxDim > 0 && (w > maxDim || h > maxDim)) {
-        double scale = static_cast<double>(maxDim) / std::max(w, h);
-        cv::Mat scaled;
-        cv::resize(mCurrentFrame, scaled, cv::Size(), scale, scale, cv::INTER_AREA);
-        return scaled; // already a new Mat, no extra clone needed
-    }
-    return mCurrentFrame.clone();
-}
-
 int VideoWidget::heightForWidth(int w) const { return w * 9 / 16; }
 bool VideoWidget::hasHeightForWidth() const  { return true; }
 

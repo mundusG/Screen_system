@@ -3,12 +3,10 @@
 
 #include <QObject>
 #include <QDateTime>
-#include <QImage>
 #include <QMap>
 #include <QMutex>
 #include <QSize>
 #include <QVector>
-#include <opencv2/core.hpp>
 #include "Types.h"
 
 struct DefectImageRecord {
@@ -38,15 +36,14 @@ public:
 
     QString locationName(int cameraId, const QString& fallbackName = QString()) const;
 
-    void saveDefectImage(int cameraId,
-                         const QString& fallbackName,
-                         const cv::Mat& frame,
-                         const QVector<Detection>& detections,
-                         float confidence,
-                         qint64 timestampMs = 0);
-
-    void onAsyncImageSaved(const DefectImageRecord& record);
-    void onAsyncSaveFailed(const QString& path, const QString& reason);
+    /// Save a pre-processed JPEG (already has detection boxes drawn by
+    /// the inference device) directly to the defect image directory.
+    /// Rate-limited per camera to prevent unbounded disk writes.
+    void saveDefectJpeg(int cameraId,
+                        const QString& fallbackName,
+                        const QByteArray& jpegData,
+                        float confidence,
+                        qint64 timestampMs = 0);
 
 signals:
     void recordsChanged();
@@ -76,6 +73,10 @@ private:
     QVector<DefectImageRecord> mRecords;
     int mSaveSequence = 0;
     bool mInitialized = false;
+
+    // Per-camera save throttling
+    QMap<int, qint64> mLastSaveTimeMs;
+    int mSaveIntervalMs = 5000;
 };
 
 #endif // DEFECTIMAGESTORE_H

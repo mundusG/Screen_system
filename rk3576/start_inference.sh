@@ -44,6 +44,7 @@ echo ""
 echo "[1] 清理旧进程..."
 pkill -9 -f "test_bridge.py" 2>/dev/null && echo "  已停止 test_bridge"
 pkill -9 -f "nn_bridge.py" 2>/dev/null && echo "  已停止 nn_bridge"
+pkill -9 -f "dposter/main.py" 2>/dev/null && echo "  已停止 dposter"
 sleep 0.5
 echo "  清理完成"
 
@@ -123,6 +124,23 @@ else
     exit 1
 fi
 
+# ─── 5. 启动 dposter (告警处理/截图保存) ───
+DPOSTER_DIR="/models/m200/dposter"
+echo ""
+echo "[5] 启动 dposter (告警/截图)..."
+if [ -f "${DPOSTER_DIR}/main.py" ]; then
+    python3 "${DPOSTER_DIR}/main.py" "${DPOSTER_DIR}/args.json" >"$LOG_DIR/dposter.log" 2>&1 &
+    DPOSTER_PID=$!
+    sleep 1
+    if kill -0 $DPOSTER_PID 2>/dev/null; then
+        echo "  dposter 已启动 (PID: $DPOSTER_PID)"
+    else
+        echo "  [警告] dposter 启动失败，告警截图功能不可用"
+    fi
+else
+    echo "  [警告] dposter 未找到: ${DPOSTER_DIR}"
+fi
+
 # ─── 完成 ───
 echo ""
 echo "========================================="
@@ -130,6 +148,7 @@ echo " 启动完成!"
 echo ""
 echo " 进程状态:"
 pgrep -a "nn_bridge" | sed 's/^/   /'
+pgrep -a "dposter" | sed 's/^/   /'
 [ "$TEST_MODE" = true ] && pgrep -a "test_bridge" | sed 's/^/   /'
 echo ""
 echo " 设备服务状态 (本脚本不管理):"

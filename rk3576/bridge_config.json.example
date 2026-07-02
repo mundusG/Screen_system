@@ -16,6 +16,7 @@
     "rate_limit": 0,
     "channel_timeout": 30,
     "channel_map": {},
+    "defect_class_ids": [1],
     "preview": {
         "host": "127.0.0.1",
         "port": 5544
