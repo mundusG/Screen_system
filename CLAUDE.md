@@ -477,12 +477,17 @@ ffprobe rtsp://<推理端IP>:5544/preview/<chid> 2>&1 | grep Stream    # RTSP
 
 | 现象 | 原因 | 解决 |
 |------|------|------|
+| `./start_inference.sh: 权限不够` | 文件缺少执行权限 | `chmod +x *.sh` |
+| `./start_inference.sh: 无法执行：找不到需要的文件` | Windows CRLF 换行导致 shebang 解析失败 | `sed -i 's/\r$//' *.sh *.py` |
+| `json.decoder.JSONDecodeError: Expecting ',' delimiter` | JSON 配置缺少逗号 | 检查 bridge_config.json 每行末尾逗号，最后一项不加逗号 |
 | MQTT Connection refused | mosquitto 只监听 127.0.0.1 | 加 `listener 1883 0.0.0.0` 配置 |
 | 有框无视频 | RTSP 不通或 `preview.host` 错误 | 检查 `bridge_config.json` 的 preview.host |
 | 有视频无框 | nn_bridge 未运行或 broker 地址错误 | 检查 nn_bridge 日志和 `default_config.json` 的 broker |
 | 通道未发现 | nn_bridge 无数据或 discovery topic 不匹配 | `mosquitto_sub -t '/dposter/200/cmd' -v -C 1` |
 | 改了配置不生效 | build 目录里的旧配置没更新 | 重新 cmake && make |
 | 闪退 | OpenCV FFMPEG 异常 | 检查 RTSP 地址、设备网络稳定性 |
+
+> **⚠️ 换行符规则**：`rk3576/` 下所有 `.sh` 和 `.py` 文件必须使用 LF 换行（Unix），不能有 CRLF（Windows）。`deploy.sh` 推送时会自动执行 `sed -i 's/\r$//'` 清理，但修改脚本后建议在本地先跑一次确保干净。验证：`file rk3576/*.sh rk3576/*.py | grep CRLF` 应无输出。
 
 ---
 

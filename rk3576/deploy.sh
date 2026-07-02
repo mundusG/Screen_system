@@ -71,7 +71,7 @@ tar -czf /tmp/rk3576_deploy.tar.gz \
     setup_device.sh
 
 scp ${SCP_OPTS} /tmp/rk3576_deploy.tar.gz "${DEVICE_USER}@${DEVICE_IP}:/tmp/"
-ssh ${SSH_OPTS} "${DEVICE_USER}@${DEVICE_IP}" "cd ${REMOTE_DIR}/rk3576 && tar -xzf /tmp/rk3576_deploy.tar.gz && rm /tmp/rk3576_deploy.tar.gz && chmod +x *.sh && \
+ssh ${SSH_OPTS} "${DEVICE_USER}@${DEVICE_IP}" "cd ${REMOTE_DIR}/rk3576 && tar -xzf /tmp/rk3576_deploy.tar.gz && rm /tmp/rk3576_deploy.tar.gz && sed -i 's/\r\$//' *.sh *.py dposter/*.py && chmod +x *.sh && \
     if [ ! -f bridge_config.json ]; then cp bridge_config.json.example bridge_config.json; echo '  Created bridge_config.json from template'; fi"
 rm /tmp/rk3576_deploy.tar.gz
 echo "  配置文件推送完成"
