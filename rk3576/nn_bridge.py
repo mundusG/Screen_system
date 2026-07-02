@@ -22,8 +22,17 @@ nn_bridge.py - 桥接 nn_server 推理输出到显示系统
     "rate_limit": 0,
     "channel_timeout": 30,
     "preview": {"host": "192.168.1.100", "port": 5544},
-    "discovery_topic": "inference/bridge/channels"
+    "discovery_topic": "inference/bridge/channels",
+    "filter_config": "filter_config.json"
 }
+
+filter_config.json (optional, consecutive-frame gating):
+{
+    "filters": [
+        {"label": "defect", "consecutive_count": 3}
+    ]
+}
+Set to "" or omit to disable filtering.
 """
 
 import json
@@ -34,6 +43,7 @@ import signal
 import threading
 import paho.mqtt.client as mqtt
 from loguru import logger
+from filter_manager import DetectionFilter
 
 
 class ChannelStats:
@@ -109,6 +119,16 @@ class NNBridge:
         # Auto-discovered channels: chid -> channel state
         self.active_channels = {}
         self.discovery_changed = True
+
+        # Load detection filter (optional, configured via "filter_config" field)
+        filter_cfg = self.config.get('filter_config', '')
+        if filter_cfg:
+            if not os.path.isabs(filter_cfg):
+                filter_cfg = os.path.join(
+                    os.path.dirname(os.path.abspath(config_path)), filter_cfg)
+            self.filter = DetectionFilter(filter_cfg)
+        else:
+            self.filter = None
 
     def _check_channel_timeout(self):
         now = time.time()
@@ -336,10 +356,7 @@ class NNBridge:
 
         now = time.time()
 
-        # ── Single lock: register + state + rate limit + frame count ──
-        effective_rate = self.rate_limit if self.rate_limit > 0 else 10
-        min_interval = 1.0 / effective_rate
-
+        # ── Step 1: Register channel + update last_seen ──
         with self._lock:
             if chid not in self.active_channels:
                 camera_id = self.channel_map.get(str(chid), chid - 1)
@@ -358,16 +375,7 @@ class NNBridge:
             camera_id = ch['camera_id']
             pub_topic = ch['publish_topic']
 
-            # Rate limit — check and set atomically
-            last_time = self.last_publish_time.get(camera_id, 0)
-            if now - last_time < min_interval:
-                return
-            self.last_publish_time[camera_id] = now
-
-            ch['frame_count'] += 1
-            frame_count = ch['frame_count']
-
-        # ── Format conversion (no lock needed — only local vars) ──
+        # ── Step 2: Format conversion (no lock) ──
         detections = []
         for det in nn_output:
             x1 = det.get('x1', 0)
@@ -400,7 +408,26 @@ class NNBridge:
                 det_out['class_name'] = class_name
             detections.append(det_out)
 
-        # Build output message
+        # ── Step 3: Apply detection filter (consecutive-frame gating) ──
+        if self.filter:
+            detections = self.filter.apply(detections, chid)
+            if not detections:
+                return  # all detections filtered out, skip this frame
+
+        # ── Step 4: Rate limit + frame count ──
+        effective_rate = self.rate_limit if self.rate_limit > 0 else 10
+        min_interval = 1.0 / effective_rate
+
+        with self._lock:
+            last_time = self.last_publish_time.get(camera_id, 0)
+            if now - last_time < min_interval:
+                return
+            self.last_publish_time[camera_id] = now
+
+            ch['frame_count'] += 1
+            frame_count = ch['frame_count']
+
+        # ── Step 5: Build output message ──
         now_ms = int(now * 1000)
         output_msg = {
             'camera_id': camera_id,
@@ -411,13 +438,12 @@ class NNBridge:
             'inference_time_ms': 0,
         }
 
-        # Skip publish if remote broker is disconnected — prevents
-        # unbounded message queue buildup in paho's internal buffer.
+        # Skip publish if remote broker is disconnected
         if not self.remote_client.is_connected():
             return
         self.remote_client.publish(pub_topic, json.dumps(output_msg), qos=self.qos)
 
-        # ── Record stats (second lock — lightweight) ──
+        # ── Record stats ──
         src_ts = param.get('timestamp', 0)
         latency = (now_ms - src_ts) if src_ts > 0 else 0
         with self._lock:

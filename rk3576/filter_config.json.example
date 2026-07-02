@@ -1,0 +1,8 @@
+{
+    "filters": [
+        {
+            "label": "defect",
+            "consecutive_count": 3
+        }
+    ]
+}

@@ -64,7 +64,9 @@ tar -czf /tmp/rk3576_deploy.tar.gz \
     nn_server/nn_server.conf \
     icon.png \
     nn_bridge.py \
+    filter_manager.py \
     bridge_config.json.example \
+    filter_config.json.example \
     test_bridge.py \
     start_inference.sh \
     stop_inference.sh \
@@ -72,7 +74,8 @@ tar -czf /tmp/rk3576_deploy.tar.gz \
 
 scp ${SCP_OPTS} /tmp/rk3576_deploy.tar.gz "${DEVICE_USER}@${DEVICE_IP}:/tmp/"
 ssh ${SSH_OPTS} "${DEVICE_USER}@${DEVICE_IP}" "cd ${REMOTE_DIR}/rk3576 && tar -xzf /tmp/rk3576_deploy.tar.gz && rm /tmp/rk3576_deploy.tar.gz && chmod +x *.sh && \
-    if [ ! -f bridge_config.json ]; then cp bridge_config.json.example bridge_config.json; echo '  Created bridge_config.json from template'; fi"
+    if [ ! -f bridge_config.json ]; then cp bridge_config.json.example bridge_config.json; echo '  Created bridge_config.json from template'; fi && \
+    if [ ! -f filter_config.json ]; then cp filter_config.json.example filter_config.json; echo '  Created filter_config.json from template'; fi"
 rm /tmp/rk3576_deploy.tar.gz
 echo "  配置文件推送完成"
 
