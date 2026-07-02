@@ -25,6 +25,6 @@
         "host": "192.168.77.145",
         "port": 5544
     },
-    "discovery_topic": "inference/bridge"
+    "discovery_topic": "inference/bridge",
     "filter_config": "filter_config.json"
 }
