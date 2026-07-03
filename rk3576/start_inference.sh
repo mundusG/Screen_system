@@ -23,8 +23,13 @@ MODEL_DIR="${SMART_GW}/models/m200"
 BRIDGE_SCRIPT="${SCRIPT_DIR}/nn_bridge.py"
 BRIDGE_CONF="${SCRIPT_DIR}/bridge_config.json"
 
-# dposter 配置
-DPOSTER_DIR="${SCRIPT_DIR}/dposter"
+# dposter 路径自动检测（优先设备原有实例，回退到本地副本）
+for _dir in "/models/m200/dposter" "${SCRIPT_DIR}/dposter"; do
+    if [ -f "${_dir}/main.py" ]; then
+        DPOSTER_DIR="$_dir"
+        break
+    fi
+done
 DPOSTER_MAIN="${DPOSTER_DIR}/main.py"
 DPOSTER_CONF="${DPOSTER_DIR}/args.json"
 LOG_DIR="${PROJECT_DIR}/log"

@@ -1,7 +1,7 @@
 #!/bin/bash
 # deploy.sh - 从开发机一键部署到 rk3576 推理端
 #
-# 推送：配置 + nn_bridge + dposter 插件 + 启动脚本
+# 推送文件列表由 git ls-files 自动生成（与 git 保持一致，避免手工维护遗漏）
 # 不推送：.rknn 模型文件（太大且不常变，需单独 scp）
 #
 # 用法:
@@ -28,26 +28,38 @@ echo " 推理端部署"
 echo " 目标: ${DEVICE_USER}@${DEVICE_IP}:${REMOTE_DIR}  (端口: ${SSH_PORT})"
 echo "========================================="
 
-# 1. 创建远程目录结构
+# 1. 创建远程目录结构（tar 解压需要父目录存在）
 echo ""
 echo "[1/3] 创建远程目录..."
 ssh ${SSH_OPTS} "${DEVICE_USER}@${DEVICE_IP}" "mkdir -p \
-    ${REMOTE_DIR}/rk3576/m200/nn_server \
-    ${REMOTE_DIR}/rk3576/db/mpp \
-    ${REMOTE_DIR}/rk3576/chma/m200/{ch0,ch1,ch2,ch3} \
-    ${REMOTE_DIR}/rk3576/dposter \
-    ${REMOTE_DIR}/rk3576/nn_server/conf/200 \
-    ${REMOTE_DIR}/rk3576/nn_server/data \
+    ${REMOTE_DIR}/rk3576 \
     ${REMOTE_DIR}/model \
     ${REMOTE_DIR}/log"
 
-# 2. 推送配置文件 (tar 打包一次传输，排除无用/大文件)
+# 2. 生成文件列表 & 推送
 echo "[2/3] 推送推理端配置..."
 
 # 本地剥离所有文本文件的 CRLF（防止 Windows 编辑器的 \r 污染）
+cd "${SCRIPT_DIR}"
 find . -type f \( -name '*.sh' -o -name '*.py' -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' -o -name '*.conf' -o -name '*.example' -o -name '*.txt' \) \
     ! -path './.git/*' ! -path './build/*' \
     -exec sh -c 'tr -d "\r" < "$1" > /tmp/rk3576_crlf_fix && mv /tmp/rk3576_crlf_fix "$1"' _ {} \;
+
+# 从 git 生成文件列表，排除模型/冗余/构建产物
+cd "${PROJECT_DIR}"
+git ls-files rk3576/ \
+    | grep -v '\.rknn$' \
+    | grep -v 'deploy.sh' \
+    | grep -v 'nn_server/conf/' \
+    | grep -v 'nn_server/data/' \
+    | grep -v 'nn_server/nn_server.conf' \
+    | grep -v '__pycache__/' \
+    | grep -v '\.pyc$' \
+    > /tmp/rk3576_files.txt
+
+FILE_COUNT=$(wc -l < /tmp/rk3576_files.txt)
+echo "  推送 ${FILE_COUNT} 个文件:"
+sed 's/^/    /' /tmp/rk3576_files.txt
 
 cd "${SCRIPT_DIR}"
 tar -czf /tmp/rk3576_deploy.tar.gz \
@@ -55,38 +67,31 @@ tar -czf /tmp/rk3576_deploy.tar.gz \
     --exclude='*.pyc' \
     --exclude='__pycache__' \
     --exclude='.DS_Store' \
-    m200/*.yaml \
-    m200/*.json \
-    m200/nn_server/nn_server.conf \
-    db/mpp/*.json \
-    chma/m200/ch*/area.json \
-    chma/m200/ch*/freq.json \
-    dposter.yaml \
-    dposter/ \
-    nn_server.yaml \
-    nn_server/conf/ \
-    nn_server/data/ \
-    nn_server/nn_server.conf \
-    icon.png \
-    nn_bridge.py \
-    filter_manager.py \
-    bridge_config.json.example \
-    filter_config.json.example \
-    test_bridge.py \
-    start_inference.sh \
-    stop_inference.sh \
-    setup_device.sh
+    -T /tmp/rk3576_files.txt \
+    -C "${PROJECT_DIR}"
 
 scp ${SCP_OPTS} /tmp/rk3576_deploy.tar.gz "${DEVICE_USER}@${DEVICE_IP}:/tmp/"
-# 远端用 find 递归清理 CRLF（兼容 busybox，sed -i 行为不一致）
-ssh ${SSH_OPTS} "${DEVICE_USER}@${DEVICE_IP}" "cd ${REMOTE_DIR}/rk3576 && tar -xzf /tmp/rk3576_deploy.tar.gz && rm /tmp/rk3576_deploy.tar.gz && \
+
+# 远端：解压 + 清理 CRLF + 生成 run.sh
+ssh ${SSH_OPTS} "${DEVICE_USER}@${DEVICE_IP}" "
+cd ${REMOTE_DIR}/rk3576 && tar -xzf /tmp/rk3576_deploy.tar.gz && rm /tmp/rk3576_deploy.tar.gz && \
     find . -type f \( -name '*.sh' -o -name '*.py' -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' -o -name '*.conf' -o -name '*.example' -o -name '*.txt' \) \
         -exec sh -c 'tr -d \"\\r\" < \"\$1\" > /tmp/crlf_fix && mv /tmp/crlf_fix \"\$1\"' _ {} \; && \
     chmod +x *.sh && \
     if [ ! -f bridge_config.json ]; then cp bridge_config.json.example bridge_config.json; echo '  Created bridge_config.json from template'; fi && \
-    if [ ! -f filter_config.json ]; then cp filter_config.json.example filter_config.json; echo '  Created filter_config.json from template'; fi"
-rm /tmp/rk3576_deploy.tar.gz
-echo "  配置文件推送完成"
+    if [ ! -f filter_config.json ]; then cp filter_config.json.example filter_config.json; echo '  Created filter_config.json from template'; fi && \
+    cat > run.sh << 'RUNEOF'
+#!/bin/bash
+cd \"\$(dirname \"\$0\")\"
+find . -maxdepth 2 -type f \( -name '*.sh' -o -name '*.py' \) \
+    -exec sh -c 'tr -d \"\\r\" < \"\$1\" > /tmp/.f && mv /tmp/.f \"\$1\"' _ {} \;
+chmod +x *.sh
+exec bash start_inference.sh \"\$@\"
+RUNEOF
+    chmod +x run.sh && echo '  run.sh 已生成'
+"
+rm /tmp/rk3576_deploy.tar.gz /tmp/rk3576_files.txt
+echo "  推送完成"
 
 # 3. 完成
 echo ""
