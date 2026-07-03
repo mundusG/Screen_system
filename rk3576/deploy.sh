@@ -44,6 +44,11 @@ ssh ${SSH_OPTS} "${DEVICE_USER}@${DEVICE_IP}" "mkdir -p \
 # 2. 推送配置文件 (tar 打包一次传输，排除无用/大文件)
 echo "[2/3] 推送推理端配置..."
 
+# 本地剥离所有文本文件的 CRLF（防止 Windows 编辑器的 \r 污染）
+find . -type f \( -name '*.sh' -o -name '*.py' -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' -o -name '*.conf' -o -name '*.example' -o -name '*.txt' \) \
+    ! -path './.git/*' ! -path './build/*' \
+    -exec sh -c 'tr -d "\r" < "$1" > /tmp/rk3576_crlf_fix && mv /tmp/rk3576_crlf_fix "$1"' _ {} \;
+
 cd "${SCRIPT_DIR}"
 tar -czf /tmp/rk3576_deploy.tar.gz \
     --exclude='*.rknn' \
@@ -73,7 +78,11 @@ tar -czf /tmp/rk3576_deploy.tar.gz \
     setup_device.sh
 
 scp ${SCP_OPTS} /tmp/rk3576_deploy.tar.gz "${DEVICE_USER}@${DEVICE_IP}:/tmp/"
-ssh ${SSH_OPTS} "${DEVICE_USER}@${DEVICE_IP}" "cd ${REMOTE_DIR}/rk3576 && tar -xzf /tmp/rk3576_deploy.tar.gz && rm /tmp/rk3576_deploy.tar.gz && sed -i 's/\r\$//' *.sh *.py dposter/*.py && chmod +x *.sh && \
+# 远端用 find 递归清理 CRLF（兼容 busybox，sed -i 行为不一致）
+ssh ${SSH_OPTS} "${DEVICE_USER}@${DEVICE_IP}" "cd ${REMOTE_DIR}/rk3576 && tar -xzf /tmp/rk3576_deploy.tar.gz && rm /tmp/rk3576_deploy.tar.gz && \
+    find . -type f \( -name '*.sh' -o -name '*.py' -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' -o -name '*.conf' -o -name '*.example' -o -name '*.txt' \) \
+        -exec sh -c 'tr -d \"\\r\" < \"\$1\" > /tmp/crlf_fix && mv /tmp/crlf_fix \"\$1\"' _ {} \; && \
+    chmod +x *.sh && \
     if [ ! -f bridge_config.json ]; then cp bridge_config.json.example bridge_config.json; echo '  Created bridge_config.json from template'; fi && \
     if [ ! -f filter_config.json ]; then cp filter_config.json.example filter_config.json; echo '  Created filter_config.json from template'; fi"
 rm /tmp/rk3576_deploy.tar.gz

@@ -1,16 +1,17 @@
 #!/bin/bash
 # start_inference.sh - 启动推理桥接服务
 #
-# 职责：部署算法包 + 启动 nn_bridge
-# 不重启 nnmgd/dmg/nn_server — 这些由设备 dposter 生态自管理
+# 职责：启动 dposter → 部署算法包 → 启动 nn_bridge
+# dposter 负责 dmg→nn_server 数据管线，nn_bridge 负责格式转换→展示端
 #
-# 数据流: dmg(RTSP采集) → nn_server_200(RKNN推理) → MQTT → nn_bridge(格式转换) → 显示端
+# 数据流: dmg(RTSP采集) → nn_server_200(RKNN推理) → MQTT → dposter(处理) → nn_bridge(格式转换) → 显示端
 #
 # 用法:
-#   ./start_inference.sh              # 部署算法包 + 启动 nn_bridge
-#   ./start_inference.sh --deploy-only # 只部署算法包，不启动 nn_bridge
-#   ./start_inference.sh --no-deploy   # 只启动 nn_bridge，不部署算法包
-#   ./start_inference.sh --test        # 用 test_bridge.py 模拟推理输出
+#   ./start_inference.sh                 # 完整启动: dposter + 算法包 + nn_bridge
+#   ./start_inference.sh --no-dposter    # 跳过 dposter 启动
+#   ./start_inference.sh --deploy-only   # 只部署算法包，不启动任何服务
+#   ./start_inference.sh --no-deploy     # 只启动服务，不部署算法包
+#   ./start_inference.sh --test          # 用 test_bridge.py 模拟推理输出
 
 set +e
 
@@ -22,15 +23,23 @@ MODEL_DIR="${SMART_GW}/models/m200"
 BRIDGE_SCRIPT="${SCRIPT_DIR}/nn_bridge.py"
 BRIDGE_CONF="${SCRIPT_DIR}/bridge_config.json"
 
+# dposter 配置
+DPOSTER_DIR="${SCRIPT_DIR}/dposter"
+DPOSTER_MAIN="${DPOSTER_DIR}/main.py"
+DPOSTER_CONF="${DPOSTER_DIR}/args.json"
+LOG_DIR="${PROJECT_DIR}/log"
+
 DEPLOY_ONLY=false
 NO_DEPLOY=false
 TEST_MODE=false
+NO_DPOSTER=false
 
 for arg in "$@"; do
     case "$arg" in
         --deploy-only) DEPLOY_ONLY=true ;;
         --no-deploy)   NO_DEPLOY=true ;;
         --test)        TEST_MODE=true ;;
+        --no-dposter)  NO_DPOSTER=true ;;
     esac
 done
 
@@ -39,11 +48,21 @@ echo " 推理桥接启动"
 echo " $(date '+%Y-%m-%d %H:%M:%S')"
 echo "========================================="
 
-# ─── 1. 清理旧 bridge 进程 ───
+# ─── 自修复：清理所有文本文件的 CRLF ───
+if [ -d "${SCRIPT_DIR}" ]; then
+    find "${SCRIPT_DIR}" -type f \( -name '*.sh' -o -name '*.py' -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' -o -name '*.conf' -o -name '*.example' -o -name '*.txt' \) \
+        -exec sh -c 'tr -d "\r" < "$1" > /tmp/crlf_fix && mv /tmp/crlf_fix "$1"' _ {} \; 2>/dev/null
+fi
+
+# ─── 1. 清理旧进程 ───
 echo ""
 echo "[1] 清理旧进程..."
 pkill -9 -f "test_bridge.py" 2>/dev/null && echo "  已停止 test_bridge"
 pkill -9 -f "nn_bridge.py" 2>/dev/null && echo "  已停止 nn_bridge"
+if [ "$NO_DPOSTER" = false ]; then
+    pkill -9 -f "dposter/main.py" 2>/dev/null && echo "  已停止 dposter"
+    pkill -9 -f "dposter/process.py" 2>/dev/null && true  # 确保子线程也清理
+fi
 sleep 0.5
 echo "  清理完成"
 
@@ -54,7 +73,6 @@ if pgrep -x mosquitto >/dev/null; then
     echo "  mosquitto 已在运行"
 else
     echo "  启动 mosquitto..."
-    # 清理残留 pid 文件
     rm -f /run/mosquitto/mosquitto.pid /var/run/mosquitto.pid 2>/dev/null || true
     mkdir -p /run/mosquitto 2>/dev/null || true
     mosquitto -d -c /etc/mosquitto/mosquitto.conf 2>/dev/null || mosquitto -d 2>/dev/null || true
@@ -88,9 +106,6 @@ if [ "$NO_DEPLOY" = false ]; then
         echo "  [警告] 无模型文件"
     fi
 
-    # 注意: 不部署 chma/ 和 db/mpp/ — 通道配置由设备服务自管理
-    # nn_bridge 会从 MQTT 消息流中自动发现活跃通道
-
     echo "  算法包部署完成（设备重启后 nnmgd 自动加载）"
 else
     echo ""
@@ -99,9 +114,37 @@ fi
 
 [ "$DEPLOY_ONLY" = true ] && echo "" && echo "仅部署模式，完成。" && exit 0
 
-# ─── 4. 启动 nn_bridge ───
+# ─── 4. 启动 dposter ───
+if [ "$NO_DPOSTER" = false ]; then
+    echo ""
+    echo "[4] 启动 dposter..."
+    if [ ! -f "$DPOSTER_MAIN" ]; then
+        echo "  [错误] dposter 入口未找到: ${DPOSTER_MAIN}"
+    elif [ ! -f "$DPOSTER_CONF" ]; then
+        echo "  [错误] dposter 配置未找到: ${DPOSTER_CONF}"
+    else
+        mkdir -p "$LOG_DIR"
+        cd "$DPOSTER_DIR"
+        python3 main.py args.json >>"$LOG_DIR/dposter.log" 2>&1 &
+        DPOSTER_PID=$!
+        sleep 1
+        if kill -0 $DPOSTER_PID 2>/dev/null; then
+            echo "  dposter 已启动 (PID: $DPOSTER_PID)"
+            echo "  日志: ${LOG_DIR}/dposter.log"
+        else
+            echo "  [错误] dposter 启动失败，查看: ${LOG_DIR}/dposter.log"
+        fi
+    fi
+else
+    echo ""
+    echo "[4] 跳过 dposter 启动 (--no-dposter)"
+fi
+
+# ─── 5. 启动 nn_bridge ───
+STEP_NUM=5
+[ "$NO_DPOSTER" = true ] && STEP_NUM=5  # 始终显示步骤5
 echo ""
-echo "[4] 启动 nn_bridge..."
+echo "[${STEP_NUM}] 启动 nn_bridge..."
 cd "${SCRIPT_DIR}"
 
 if [ "$TEST_MODE" = true ]; then
@@ -110,7 +153,6 @@ if [ "$TEST_MODE" = true ]; then
     echo "  test_bridge (PID: $!)"
 fi
 
-LOG_DIR="$(dirname "$SCRIPT_DIR")/log"
 mkdir -p "$LOG_DIR"
 python3 "$BRIDGE_SCRIPT" "$BRIDGE_CONF" >"$LOG_DIR/nn_bridge.log" 2>&1 &
 BRIDGE_PID=$!
@@ -129,6 +171,7 @@ echo "========================================="
 echo " 启动完成!"
 echo ""
 echo " 进程状态:"
+pgrep -a "dposter/main" | sed 's/^/   /'
 pgrep -a "nn_bridge" | sed 's/^/   /'
 [ "$TEST_MODE" = true ] && pgrep -a "test_bridge" | sed 's/^/   /'
 echo ""
