@@ -103,9 +103,30 @@ else
     echo "  [警告] 端口 1883 未检测到，请检查 mosquitto 配置"
 fi
 
-# ─── 3. 创建系统服务 ───
+# ─── 3. 生成 CRLF-free 启动器 ───
 echo ""
-echo "[3/4] 创建 nn_bridge systemd 服务..."
+echo "[3/4] 生成启动器 run.sh (CRLF-free)..."
+cat > "${BRIDGE_DIR}/run.sh" << 'RUNEOF'
+#!/bin/bash
+# run.sh - CRLF-free launcher (generated on-device, never edited on Windows)
+# Usage: ./run.sh [--no-deploy] [--no-dposter] [--test] [--deploy-only]
+set -e
+SELF="$(cd "$(dirname "$0")" && pwd)"
+cd "$SELF"
+
+# Strip CRLF from all scripts before launching
+find . -maxdepth 2 -type f \( -name '*.sh' -o -name '*.py' \) \
+    -exec sh -c 'tr -d "\r" < "$1" > /tmp/.crlf_fix && mv /tmp/.crlf_fix "$1"' _ {} \; 2>/dev/null || true
+
+chmod +x *.sh
+exec bash start_inference.sh "$@"
+RUNEOF
+chmod +x "${BRIDGE_DIR}/run.sh"
+echo "  run.sh → ${BRIDGE_DIR}/run.sh"
+
+# ─── 4. 创建系统服务 ───
+echo ""
+echo "[4/5] 创建 nn_bridge systemd 服务..."
 
 cat > /etc/systemd/system/nn_bridge.service << EOF
 [Unit]
@@ -130,20 +151,19 @@ systemctl daemon-reload
 systemctl enable nn_bridge.service
 echo "  nn_bridge.service → 已创建并启用"
 
-# ─── 4. 完成 ───
+# ─── 5. 完成 ───
 echo ""
 echo "========================================="
 echo " 推理端部署完成!"
+echo ""
+echo " 启动方式:"
+echo "   cd ${BRIDGE_DIR} && ./run.sh           # 完整启动"
+echo "   ./run.sh --no-deploy                   # 跳过部署"
+echo "   ./run.sh --test                        # 测试模式"
 echo ""
 echo " 服务管理:"
 echo "   systemctl start|stop|restart nn_bridge"
 echo "   journalctl -u nn_bridge -f"
 echo ""
-echo " 手动启动:"
-echo "   cd ${BRIDGE_DIR} && ./start_inference.sh"
+echo " 停止: ${BRIDGE_DIR}/stop_inference.sh"
 echo ""
-echo " 下一步:"
-echo "   1. 推送模型到 ${PROJECT_DIR}/model/"
-echo "   2. 编辑 ${BRIDGE_DIR}/bridge_config.json (preview.host)"
-echo "   3. ${BRIDGE_DIR}/start_inference.sh"
-echo "========================================="
