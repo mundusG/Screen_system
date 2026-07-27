@@ -77,6 +77,18 @@ void VideoWidget::setConfidenceThreshold(float threshold)
     mConfThreshold = threshold;
 }
 
+void VideoWidget::updateClassColor(int classId, const QColor& color)
+{
+    mClassColors[classId] = color;
+}
+
+void VideoWidget::clearClassColors()
+{
+    mClassColors.clear();
+    mClassColors[0] = QColor(0,   255, 0);
+    mClassColors[1] = QColor(255, 0,   0);
+}
+
 void VideoWidget::updateDisplayFrame(const FrameData& frame)
 {
     if (frame.image.empty()) return;

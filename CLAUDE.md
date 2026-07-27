@@ -416,11 +416,18 @@ cp config/default_config.json.example config/default_config.json
 
 ```json
 {
-    "mqtt": {
-        "broker": "tcp://<推理端IP>:1883"
-    },
+    "mqtt_sources": [
+        {
+            "id": "main",
+            "enabled": true,
+            "broker": "tcp://<推理端IP>:1883",
+            "client_id": "display_main",
+            "discovery_topic": "inference/bridge/+/channels",
+            "camera_id_min": 0,
+            "camera_id_max": 7
+        }
+    ],
     "services": {
-        "nn_bridge": { "enabled": false },
         "check_mosquitto": false
     }
 }
@@ -428,11 +435,8 @@ cp config/default_config.json.example config/default_config.json
 
 | 字段 | 值 | 说明 |
 |------|-----|------|
-| `mqtt.broker` | `tcp://<推理端IP>:1883` | **必改**：指向推理端 mosquitto |
-| `services.nn_bridge.enabled` | `false` | 展示端不跑推理桥接，必须显式写 false |
+| `mqtt_sources[0].broker` | `tcp://<推理端IP>:1883` | **必改**：指向推理端 mosquitto |
 | `services.check_mosquitto` | `false` | 展示端不检查本地 mosquitto |
-
-> **⚠️ `services` 段必须显式写 `false`，不能删掉。** ConfigManager 的默认值逻辑：当 key 缺失时，`nn_bridge.enabled` 在 `mqtt_subscribe` 模式下默认为 `true`，会试图启动 nn_bridge.py。
 
 > **⚠️ 修改配置后必须重新编译**（`cd build && cmake .. && make -j$(nproc)`），否则 build 目录里的旧配置不会更新。
 
@@ -467,10 +471,9 @@ ffprobe rtsp://<推理端IP>:5544/preview/<chid> 2>&1 | grep Stream    # RTSP
 - [ ] 推理端和展示端网络互通
 - [ ] 推理端 mosquitto 监听 `0.0.0.0:1883`（`ss -tlnp | grep 1883`）
 - [ ] `bridge_config.json` 的 `preview.host` = 推理端 IP
-- [ ] `default_config.json` 的 `mqtt.broker` = `tcp://推理端IP:1883`
-- [ ] `default_config.json` 的 `services.nn_bridge.enabled` = `false`
+- [ ] `default_config.json` 的 `mqtt_sources[0].broker` = `tcp://推理端IP:1883`
 - [ ] 模型文件已拷贝到推理端 `/models/screen_system/model/`
-- [ ] 推理端 nn_bridge 已启动，discovery 消息正常
+- [ ] 推理端已启动（nn_bridge 或 edge_server），discovery 消息正常
 - [ ] 展示端能收到 discovery 消息且 RTSP 流可达
 
 #### 常见问题
@@ -479,8 +482,8 @@ ffprobe rtsp://<推理端IP>:5544/preview/<chid> 2>&1 | grep Stream    # RTSP
 |------|------|------|
 | MQTT Connection refused | mosquitto 只监听 127.0.0.1 | 加 `listener 1883 0.0.0.0` 配置 |
 | 有框无视频 | RTSP 不通或 `preview.host` 错误 | 检查 `bridge_config.json` 的 preview.host |
-| 有视频无框 | nn_bridge 未运行或 broker 地址错误 | 检查 nn_bridge 日志和 `default_config.json` 的 broker |
-| 通道未发现 | nn_bridge 无数据或 discovery topic 不匹配 | `mosquitto_sub -t '/dposter/200/cmd' -v -C 1` |
+| 有视频无框 | 推理端未运行或 broker 地址错误 | 检查推理端日志和 `default_config.json` 的 broker |
+| 通道未发现 | 推理端无数据或 discovery topic 不匹配 | `mosquitto_sub -t 'inference/bridge/+/channels' -v -C 1` |
 | 改了配置不生效 | build 目录里的旧配置没更新 | 重新 cmake && make |
 | 闪退 | OpenCV FFMPEG 异常 | 检查 RTSP 地址、设备网络稳定性 |
 
@@ -514,9 +517,8 @@ sudo systemctl restart mosquitto
 
 ```json
 // default_config.json
-"mqtt": { "broker": "tcp://127.0.0.1:1883" },
+"mqtt_sources": [{ "broker": "tcp://127.0.0.1:1883", ... }],
 "services": {
-    "nn_bridge": { "enabled": false },
     "check_mosquitto": true
 }
 ```
@@ -534,6 +536,156 @@ sudo systemctl restart mosquitto
 ```
 
 每台推理端的本地 mosquitto（`mqtt_local`）照常 `127.0.0.1`，不受影响——它只管本机 dmg→nn_server→nn_bridge 的内部管道。
+
+---
+
+## rk3588 推理端部署 (.so 算法包)
+
+RK3588 推理端使用 Go edge_server 管理 RTSP 采集 → SHM → dlopen .so 的标准管线。不需要 nn_bridge.py —— .so 内部直接发布 MQTT 到展示端格式。
+
+### 系统架构
+
+```
+┌──────────────────────────────────────────────┐
+│  RK3588 (推理端)                              │
+│                                              │
+│  摄像头 → edge_server(RTSP→SHM→dlopen .so)    │
+│         └→ algo_process_shm_detect()          │
+│              ├→ return AlgoDetection[]        │
+│              └→ MQTT publish (内部直连)        │
+│                                              │
+│  mosquitto (127.0.0.1:1883)                  │
+│  preview: rtsp://<设备IP>:554/preview/{chid}  │
+└──────────────┬───────────────────────────────┘
+               │ MQTT
+               │   inference/camera/{id}/detections
+               │   inference/bridge/{client_id}/channels (retain)
+               │   inference/bridge/{client_id}/class_manifest (retain)
+               │   inference/bridge/status (LWT, retain)
+               ↓
+┌──────────────────────────────────────────────┐
+│  展示端 (WSL / 其他 Linux)                     │
+│  ScreenInferenceSystem (Qt5)                 │
+│    ├─ MQTT 订阅: 检测数据 + 通道发现 + 类别清单 │
+│    └─ RTSP 拉流: rtsp://<RK3588>:554/preview/ │
+└──────────────────────────────────────────────┘
+```
+
+### MQTT 消息格式
+
+**检测结果** → `inference/camera/{camera_id}/detections` (QoS 0):
+
+```json
+{
+    "camera_id": 0,
+    "timestamp": 1722001234567,
+    "frame_index": 1523,
+    "normalized": true,
+    "inference_time_ms": 12.5,
+    "detections": [
+        {
+            "class_id": 0,
+            "class_name": "smoking",
+            "confidence": 0.92,
+            "bbox": {"cx": 0.37, "cy": 0.21, "w": 0.12, "h": 0.34}
+        }
+    ]
+}
+```
+
+**通道发现** → `inference/bridge/{client_id}/channels` (QoS 1, retain):
+
+```json
+{
+    "channels": [
+        {
+            "camera_id": 0,
+            "chid": 1,
+            "name": "camera_1",
+            "preview_url": "rtsp://192.168.1.200:554/preview/1",
+            "inference_topic": "inference/camera/0/detections"
+        }
+    ]
+}
+```
+
+**类别清单** → `inference/bridge/{client_id}/class_manifest` (QoS 1, retain):
+
+```json
+{
+    "client_id": "rk3588_screen_01",
+    "channels": [{
+        "camera_id": 0,
+        "model_type": "yolov5",
+        "classes": [
+            {"id": 0, "name": "smoking"},
+            {"id": 1, "name": "phone"}
+        ]
+    }]
+}
+```
+
+### A. 编译 .so
+
+```bash
+# 在开发机上交叉编译（需要 aarch64-linux-gnu 工具链 + RK3588 sysroot）
+cd /mnt/d/\!code/screen_system/rk3588
+mkdir -p build && cd build
+cmake .. -DCMAKE_TOOLCHAIN_FILE=../toolchain/rk3588_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
+# 产物: algo/libscreen_detect_rknn.so
+```
+
+### B. 部署
+
+```bash
+# 一键部署（编译 + 推送 + 远端初始化）
+cd /mnt/d/\!code/screen_system
+./rk3588/deploy/deploy.sh <设备IP> root /models/screen_system <SSH端口>
+
+# 例——局域网:
+./rk3588/deploy/deploy.sh 192.168.1.200
+
+# 例——公网端口转发:
+./rk3588/deploy/deploy.sh 42.193.140.103 root /models/screen_system 61837
+```
+
+### C. 配置 edge_server
+
+edge_server 传给 algo_init 的 config_json 应包含 `bridge_config.json` 的内容：
+
+| 字段 | 说明 |
+|------|------|
+| `shm_list[]` | edge_server 创建的 SHM 路径列表 |
+| `channels[]` | `{chid, camera_id, name}` 通道映射 |
+| `model_type` | `0`=YOLOv5, `1`=YOLOv8, `2`=YOLOv11 |
+| `class_names[]` | 类别名列表（动态，不限于 person） |
+| `conf_thres` / `iou_thres` | 检测阈值 |
+| `mqtt_host` / `mqtt_port` | MQTT broker 地址 |
+| `client_id` | 用于 discovery/class_manifest/LWT topic |
+| `preview_host` / `preview_port` | RTSP 预览地址 |
+| `rate_limit` | MQTT 发布帧率上限 (fps) |
+
+### D. 验证
+
+```bash
+ssh root@<RK3588>
+# 检查 .so 是否被 edge_server 加载
+journalctl -u edge_server -f | grep "algo_init"
+
+# MQTT 验证
+mosquitto_sub -t 'inference/bridge/+/channels' -v -C 1
+mosquitto_sub -t 'inference/bridge/+/class_manifest' -v -C 1
+mosquitto_sub -t 'inference/camera/+/detections' -v -C 5
+```
+
+### E. 展示端适配要点
+
+- `class_manifest` topic 由 InferenceSubscriber 自动订阅（从 discovery topic 派生：`channels` → `class_manifest`）
+- 解码后通过 `classManifestReceived` 信号发送到 MainWindow
+- MainWindow 按 class_id → HSV 色相自动分配颜色到 VideoWidget
+- ConfigManager 不再解析 `services.nn_bridge` 字段
+- ServiceLauncher 不再管理 Python bridge 进程
 
 ---
 

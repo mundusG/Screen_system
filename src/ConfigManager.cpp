@@ -94,11 +94,6 @@ bool ConfigManager::loadFromFile(const QString& filePath)
 
     // Read services settings
     QJsonObject servicesObj = root["services"].toObject();
-    QJsonObject bridgeObj = servicesObj["nn_bridge"].toObject();
-    mBridgeEnabled = bridgeObj["enabled"].toBool(mSystemMode == "mqtt_subscribe");
-    mBridgeScript  = bridgeObj["script"].toString("rk3576/nn_bridge.py");
-    mBridgeConfig  = bridgeObj["config"].toString("rk3576/bridge_config.json");
-    mBridgePython  = bridgeObj["python"].toString("python3");
     mCheckMosquitto = servicesObj["check_mosquitto"].toBool(true);
 
     // Read discovery topic
@@ -302,30 +297,6 @@ QString ConfigManager::mqttPassword() const
 {
     QMutexLocker locker(&mMutex);
     return mMqttPassword;
-}
-
-bool ConfigManager::bridgeEnabled() const
-{
-    QMutexLocker locker(&mMutex);
-    return mBridgeEnabled;
-}
-
-QString ConfigManager::bridgeScript() const
-{
-    QMutexLocker locker(&mMutex);
-    return mBridgeScript;
-}
-
-QString ConfigManager::bridgeConfig() const
-{
-    QMutexLocker locker(&mMutex);
-    return mBridgeConfig;
-}
-
-QString ConfigManager::bridgePython() const
-{
-    QMutexLocker locker(&mMutex);
-    return mBridgePython;
 }
 
 bool ConfigManager::checkMosquitto() const

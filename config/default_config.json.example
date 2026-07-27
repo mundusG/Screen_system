@@ -34,12 +34,6 @@
         }
     ],
     "services": {
-        "nn_bridge": {
-            "enabled": false,
-            "script": "rk3576/nn_bridge.py",
-            "config": "rk3576/bridge_config.json",
-            "python": "python3"
-        },
         "check_mosquitto": true
     },
     "cameras": [

@@ -153,11 +153,25 @@ struct ChannelInfo {
     QString inferenceTopic;     // inference/camera/{id}/detections
 };
 
+/// Single class entry from class_manifest MQTT message
+struct ClassInfo {
+    int     id      = 0;
+    QString name;
+};
+
+/// Per-channel class manifest (decoded from inference/bridge/+/class_manifest)
+struct ClassRegistry {
+    int                   cameraId    = 0;
+    QString               modelType;
+    QVector<ClassInfo>    classes;
+};
+
 // Register types for Qt signal/slot system
 Q_DECLARE_METATYPE(FrameData)
 Q_DECLARE_METATYPE(InferenceResult)
 Q_DECLARE_METATYPE(DisplayResult)
 Q_DECLARE_METATYPE(ChannelInfo)
+Q_DECLARE_METATYPE(ClassRegistry)
 Q_DECLARE_METATYPE(CameraConfig)
 Q_DECLARE_METATYPE(cv::Mat)
 

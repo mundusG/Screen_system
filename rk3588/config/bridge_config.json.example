@@ -1,0 +1,35 @@
+{
+    "shm_list": [
+        "/tmp/video_shm_CH01.dat",
+        "/tmp/video_shm_CH02.dat",
+        "/tmp/video_shm_CH03.dat",
+        "/tmp/video_shm_CH04.dat",
+        "/tmp/video_shm_CH05.dat",
+        "/tmp/video_shm_CH06.dat",
+        "/tmp/video_shm_CH07.dat",
+        "/tmp/video_shm_CH08.dat"
+    ],
+    "channels": [
+        {"chid": 1, "camera_id": 0, "name": "camera_1"},
+        {"chid": 2, "camera_id": 1, "name": "camera_2"},
+        {"chid": 3, "camera_id": 2, "name": "camera_3"},
+        {"chid": 4, "camera_id": 3, "name": "camera_4"},
+        {"chid": 5, "camera_id": 4, "name": "camera_5"},
+        {"chid": 6, "camera_id": 5, "name": "camera_6"},
+        {"chid": 7, "camera_id": 6, "name": "camera_7"},
+        {"chid": 8, "camera_id": 7, "name": "camera_8"}
+    ],
+    "model_type": 0,
+    "conf_thres": 0.5,
+    "iou_thres": 0.45,
+    "class_names": ["person"],
+
+    "mqtt_host": "127.0.0.1",
+    "mqtt_port": 1883,
+    "mqtt_topic_prefix": "inference/camera",
+    "client_id": "rk3588_screen_01",
+    "discovery_topic_base": "inference/bridge",
+    "preview_host": "127.0.0.1",
+    "preview_port": 5544,
+    "rate_limit": 10
+}

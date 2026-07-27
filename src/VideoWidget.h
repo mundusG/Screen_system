@@ -26,6 +26,8 @@ public:
     QImage grabFullFrame() const;
 
     void setSelected(bool selected);
+    void updateClassColor(int classId, const QColor& color);
+    void clearClassColors();
 
 signals:
     void confidenceThresholdChanged(int cameraId, float threshold);

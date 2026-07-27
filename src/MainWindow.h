@@ -63,6 +63,7 @@ private slots:
     void onSnapshotRequested();
     void openDefectImageBrowser();
     void onChannelsDiscovered(const QVector<ChannelInfo>& channels, const QString& mqttSourceId);
+    void onClassManifestReceived(const QVector<ClassRegistry>& registries, const QString& mqttSourceId);
 
 private:
     void setupUI();

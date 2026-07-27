@@ -66,6 +66,16 @@ bool InferenceSubscriber::connectAndSubscribe(const QString& brokerUrl,
         mSubscribedTopics.prepend(mDiscoveryTopic);
     }
 
+    // Derive class_manifest topic from discovery topic pattern
+    // e.g. "inference/bridge/+/channels" → "inference/bridge/+/class_manifest"
+    if (!mDiscoveryTopic.isEmpty()) {
+        QString manifestTopic = mDiscoveryTopic;
+        manifestTopic.replace("/channels", "/class_manifest");
+        if (manifestTopic != mDiscoveryTopic && !mSubscribedTopics.contains(manifestTopic)) {
+            mSubscribedTopics.prepend(manifestTopic);
+        }
+    }
+
     if (!mMqttClient->connectToBroker(brokerUrl, clientId, username, password)) {
         return false;
     }
@@ -115,6 +125,19 @@ void InferenceSubscriber::onMessageReceived(const QString& topic, const QByteArr
             emit channelsDiscovered(channels);
         } else {
             qWarning() << "InferenceSubscriber: Failed to decode channel discovery";
+        }
+        return;
+    }
+
+    // Class manifest message (retained) — emit immediately
+    if (topic.endsWith("/class_manifest")) {
+        QVector<ClassRegistry> registries;
+        if (decodeClassManifest(payload, registries)) {
+            qDebug() << "InferenceSubscriber: Received class manifest with"
+                     << registries.size() << "channel(s)";
+            emit classManifestReceived(registries);
+        } else {
+            qWarning() << "InferenceSubscriber: Failed to decode class manifest";
         }
         return;
     }
@@ -262,6 +285,40 @@ bool InferenceSubscriber::decodeChannelDiscovery(const QByteArray& json, QVector
     return true;
 }
 
+bool InferenceSubscriber::decodeClassManifest(const QByteArray& json, QVector<ClassRegistry>& registries)
+{
+    QJsonParseError parseError;
+    QJsonDocument doc = QJsonDocument::fromJson(json, &parseError);
+    if (parseError.error != QJsonParseError::NoError)
+        return false;
+
+    QJsonObject root = doc.object();
+    QJsonArray channelsArr = root["channels"].toArray();
+    if (channelsArr.isEmpty())
+        return false;
+
+    registries.clear();
+    registries.reserve(channelsArr.size());
+    for (const QJsonValue& chVal : channelsArr) {
+        QJsonObject chObj = chVal.toObject();
+        ClassRegistry reg;
+        reg.cameraId  = chObj["camera_id"].toInt();
+        reg.modelType = chObj["model_type"].toString();
+
+        QJsonArray classesArr = chObj["classes"].toArray();
+        reg.classes.reserve(classesArr.size());
+        for (const QJsonValue& clsVal : classesArr) {
+            QJsonObject clsObj = clsVal.toObject();
+            ClassInfo info;
+            info.id   = clsObj["id"].toInt();
+            info.name = clsObj["name"].toString();
+            reg.classes.append(info);
+        }
+        registries.append(reg);
+    }
+    return true;
+}
+
 // ============================================================
 // InferenceSubscriberThread implementation
 // ============================================================
@@ -280,6 +337,9 @@ InferenceSubscriberThread::InferenceSubscriberThread(QObject* parent)
             Qt::QueuedConnection);
     connect(mSubscriber, &InferenceSubscriber::channelsDiscovered,
             this, &InferenceSubscriberThread::channelsDiscovered,
+            Qt::QueuedConnection);
+    connect(mSubscriber, &InferenceSubscriber::classManifestReceived,
+            this, &InferenceSubscriberThread::classManifestReceived,
             Qt::QueuedConnection);
     connect(mSubscriber, &InferenceSubscriber::error,
             this, &InferenceSubscriberThread::error,

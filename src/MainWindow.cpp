@@ -73,6 +73,7 @@ MainWindow::MainWindow(QWidget* parent)
     qRegisterMetaType<InferenceResult>("InferenceResult");
     qRegisterMetaType<DisplayResult>("DisplayResult");
     qRegisterMetaType<CameraConfig>("CameraConfig");
+    qRegisterMetaType<ClassRegistry>("ClassRegistry");
 }
 
 MainWindow::~MainWindow()
@@ -224,23 +225,6 @@ bool MainWindow::initialize(const QString& configPath, bool forceImageMode)
         }
     }
 
-    if (mConfigManager->bridgeEnabled()) {
-        QString exeDir = QCoreApplication::applicationDirPath();
-        QString scriptPath = QDir(exeDir).absoluteFilePath(
-            "../" + mConfigManager->bridgeScript());
-        QString configPath = QDir(exeDir).absoluteFilePath(
-            "../" + mConfigManager->bridgeConfig());
-        scriptPath = QFileInfo(scriptPath).canonicalFilePath();
-        configPath = QFileInfo(configPath).canonicalFilePath();
-
-        if (!scriptPath.isEmpty() && !configPath.isEmpty()) {
-            mServiceLauncher->startNNBridge(
-                mConfigManager->bridgePython(), scriptPath, configPath);
-        } else {
-            qWarning() << "MainWindow: nn_bridge script or config not found";
-        }
-    }
-
     // Initialize one MQTT subscriber per configured source. Each source owns
     // a disjoint global camera ID range, so two inference systems can feed the
     // same display without their camera IDs or subscriptions being mixed.
@@ -284,6 +268,10 @@ bool MainWindow::initialize(const QString& configPath, bool forceImageMode)
                 if (!accepted.isEmpty()) {
                     onChannelsDiscovered(accepted, source.id);
                 }
+            });
+            connect(subscriber, &InferenceSubscriberThread::classManifestReceived,
+                    this, [this, source](const QVector<ClassRegistry>& registries) {
+                onClassManifestReceived(registries, source.id);
             });
             connect(subscriber, &InferenceSubscriberThread::error,
                     this, [this, source](const QString& message) {
@@ -913,6 +901,26 @@ void MainWindow::onChannelsDiscovered(const QVector<ChannelInfo>& channels,
             mAlertPanel->setCameraRunning(ch.cameraId, true);
         }
         updatePanels();
+    }
+}
+
+void MainWindow::onClassManifestReceived(const QVector<ClassRegistry>& registries,
+                                         const QString& mqttSourceId)
+{
+    qDebug() << "MainWindow: Received class manifest from MQTT source" << mqttSourceId
+             << "with" << registries.size() << "channel(s)";
+
+    for (const auto& reg : registries) {
+        int camId = reg.cameraId;
+        // Generate distinct colors per class ID using golden angle hue spacing
+        for (const auto& cls : reg.classes) {
+            int hue = (cls.id * 67 + 180) % 360;
+            QColor color = QColor::fromHsv(hue, 220, 255);
+            if (camId < mVideoWidgets.size())
+                mVideoWidgets[camId]->updateClassColor(cls.id, color);
+        }
+        qDebug() << "MainWindow: Class manifest for camera" << camId
+                 << "model:" << reg.modelType << "classes:" << reg.classes.size();
     }
 }
 

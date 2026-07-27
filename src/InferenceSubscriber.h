@@ -53,6 +53,9 @@ signals:
     /// Emitted when channel discovery message is received
     void channelsDiscovered(const QVector<ChannelInfo>& channels);
 
+    /// Emitted when class manifest message is received (retained, per bridge client)
+    void classManifestReceived(const QVector<ClassRegistry>& registries);
+
     /// Emitted on errors
     void error(const QString& message);
 
@@ -69,6 +72,9 @@ private:
 
     /// Decode channel discovery JSON
     bool decodeChannelDiscovery(const QByteArray& json, QVector<ChannelInfo>& channels);
+
+    /// Decode class manifest JSON (inference/bridge/+/class_manifest)
+    bool decodeClassManifest(const QByteArray& json, QVector<ClassRegistry>& registries);
 
     MQTTClient* mMqttClient;
     QStringList mSubscribedTopics;
@@ -108,6 +114,7 @@ public:
 signals:
     void inferenceFinished(const InferenceResult& result);
     void channelsDiscovered(const QVector<ChannelInfo>& channels);
+    void classManifestReceived(const QVector<ClassRegistry>& registries);
     void error(const QString& message);
 
 private:
