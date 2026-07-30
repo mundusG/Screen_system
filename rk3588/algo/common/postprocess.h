@@ -12,11 +12,11 @@
 #ifndef POSTPROCESS_H
 #define POSTPROCESS_H
 
+#include <cmath>
 #include <vector>
 #include <cstdint>
 
-// 前向声明 (实际定义在 bridge.h)
-struct AlgoDetection;
+#include "bridge.h"
 
 /** 单尺度 feature map 属性 */
 struct YOLOScale {
@@ -53,14 +53,24 @@ int yolo5_postprocess(const float* outputs[3],
                       AlgoDetection* dets, int max_dets);
 
 /**
- * YOLOv8/YOLOv11 anchor-free 后处理
- * @param output         单个 tensor [1, 4+nc, N]
- * @param n_elements     tensor 总元素数 (4+nc)*N
+ * YOLOv8/YOLOv11 anchor-free 后处理 (decoded 输出)
+ *
+ * 假设模型已经在导出时做完 bbox decode:
+ *   - cx, cy, w, h 是模型输入分辨率下的像素值 (0 ~ model_w/h)
+ *   - class scores 已经经过 sigmoid (概率, 0~1), 不再做 sigmoid
+ *
+ * 支持两种内存布局:
+ *   channel_first=1: tensor [1, 4+nc, N]  → row[c] = output[c*N + i]
+ *   channel_first=0: tensor [1, N, 4+nc]  → row[c] = output[i*(4+nc) + c]
+ *
+ * @param output         输出 tensor 数据 (want_float=1)
+ * @param n_anchors      锚点数量 N (640 输入通常 8400)
  * @param nc             类别数
+ * @param channel_first  布局: 1=[1,C,N], 0=[1,N,C]
  * @param ...            其余参数同 yolo5_postprocess
  */
 int yolo8_postprocess(const float* output,
-                      int n_elements, int nc,
+                      int n_anchors, int nc, int channel_first,
                       int model_w, int model_h,
                       int img_w, int img_h,
                       float pad_left, float pad_top, float scale,
@@ -86,7 +96,7 @@ float bbox_iou(float x1_a, float y1_a, float x2_a, float y2_a,
  * Sigmoid 激活函数
  */
 inline float sigmoid(float x) {
-    return 1.0f / (1.0f + expf(-x));
+    return 1.0f / (1.0f + std::exp(-x));
 }
 
 #endif // POSTPROCESS_H

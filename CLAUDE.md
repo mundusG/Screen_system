@@ -627,13 +627,33 @@ RK3588 推理端使用 Go edge_server 管理 RTSP 采集 → SHM → dlopen .so 
 
 ### A. 编译 .so
 
+**方式一：在 RK3588 设备上原生编译（推荐）**
+
 ```bash
-# 在开发机上交叉编译（需要 aarch64-linux-gnu 工具链 + RK3588 sysroot）
-cd /mnt/d/\!code/screen_system/rk3588
+# 将 rk3588/ 源码 scp 到设备，或直接在设备上 clone
+cd /models/screen_system/rk3588
+rm -f CMakeCache.txt && rm -rf CMakeFiles/   # 清理可能的过期缓存
 mkdir -p build && cd build
-cmake .. -DCMAKE_TOOLCHAIN_FILE=../toolchain/rk3588_toolchain.cmake -DCMAKE_BUILD_TYPE=Release
+cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 # 产物: algo/libscreen_detect_rknn.so
+```
+
+**方式二：在 WSL/开发机上交叉编译**
+
+```bash
+# 需要 aarch64-linux-gnu 工具链 + RK3588 sysroot
+sudo apt install g++-aarch64-linux-gnu
+# 还需要从 RK3588 设备提取 sysroot 到 $HOME/rk3588_sysroot/
+
+cd /mnt/d/\!code/screen_system/rk3588
+rm -f CMakeCache.txt && rm -rf CMakeFiles/   # 清理可能的过期缓存
+mkdir -p build && cd build
+cmake .. \
+    -DCMAKE_TOOLCHAIN_FILE=../toolchain/rk3588_toolchain.cmake \
+    -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc)
+# 产物: algo/libscreen_detect_rknn.so (ARM aarch64 ELF)
 ```
 
 ### B. 部署

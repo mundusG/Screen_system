@@ -6,20 +6,11 @@
  */
 
 #include "postprocess.h"
+#include "bridge.h"
 #include <cstdio>
 #include <cmath>
 #include <algorithm>
 #include <cstring>
-
-// bridge.h 定义了 AlgoDetection, 不带 bridge.h 时用前向声明
-#ifndef BRIDGE_H
-struct AlgoDetection {
-    float x1, y1, x2, y2;
-    float conf;
-    int   class_id;
-    char  class_name[32];
-};
-#endif
 
 // ============================================================================
 // bbox IoU
@@ -209,89 +200,61 @@ int yolo5_postprocess(const float* outputs[3],
 }
 
 // ============================================================================
-// YOLOv8/YOLOv11 anchor-free 后处理
+// YOLOv8/YOLOv11 anchor-free 后处理 (decoded 输出)
 //
-// 输入: 单个 tensor [1, 4+nc, N] (N = 8400 for 640x640 model)
-//   每行: [cx, cy, w, h, cls0, cls1, ..., clsn]
-// 解码: 通过 stride 将 grid-cell 相对坐标转换为像素坐标
-//   8400 = 80*80 + 40*40 + 20*20 (stride=8/16/32)
+// 假设模型已经在导出时做完 bbox decode:
+//   - cx, cy, w, h 是模型输入分辨率下的像素值 (0 ~ model_w/h)
+//   - class scores 已经经过 sigmoid (0 ~ 1), 直接就是概率
 //
-// YOLOv8 decode:
-//   For stride=8 (80x80 grid), row 0..6399:
-//     dbox = output[0:4, i]  (cy,cx,w,h order depends on export)
-//     cx = (sigmoid(dbox[0]) + grid_x) * stride
-//     cy = (sigmoid(dbox[1]) + grid_y) * stride
-//     w  = exp(dbox[2]) * stride   -- actually depends on export format
-//     h  = exp(dbox[3]) * stride
-//
-// Common RKNN export: xywh in pixel space already decoded, just need rescale.
-// We detect the format from dimensions and handle both cases.
+// 支持两种内存布局:
+//   channel_first=1 (RKNN 常见): tensor [1, 4+nc, N]
+//     row[c] = output[c * N + i]   (访问同一 anchor 的第 c 个通道)
+//   channel_first=0 (Ultralytics ONNX 常见): tensor [1, N, 4+nc]
+//     row[c] = output[i * (4+nc) + c]
 // ============================================================================
 int yolo8_postprocess(const float* output,
-                      int n_elements, int nc,
+                      int n_anchors, int nc, int channel_first,
                       int model_w, int model_h,
                       int img_w, int img_h,
                       float pad_left, float pad_top, float scale,
                       float conf_thres, float iou_thres,
                       AlgoDetection* dets, int max_dets) {
-    // Expect shape: [1, 4+nc, N]
-    int N = n_elements / (4 + nc);
-    if (N <= 0) {
-        fprintf(stderr, "[postprocess] yolo8: invalid tensor shape, n_elems=%d nc=%d\n",
-                n_elements, nc);
+    if (n_anchors <= 0 || nc <= 0) {
+        fprintf(stderr, "[postprocess] yolo8: invalid shape n_anchors=%d nc=%d\n",
+                n_anchors, nc);
         return 0;
     }
 
-    int row_size = 4 + nc;
+    int C = 4 + nc;
     int num_dets = 0;
 
-    // 预计算 stride 映射: 8400 = 80*80(stride=8) + 40*40(stride=16) + 20*20(stride=32)
-    static const int strides[] = {8, 16, 32};
-    static const int grid_sizes[] = {80, 40, 20};
-    int offsets[3] = {0, 80*80, 80*80 + 40*40};
+    // 抽出 (i, c) 索引访问函数
+    auto get = [&](int i, int c) -> float {
+        return channel_first ? output[c * n_anchors + i] : output[i * C + c];
+    };
 
-    for (int i = 0; i < N && num_dets < max_dets; i++) {
-        // 确定当前预测属于哪个 stride 级别
-        int level = 0;
-        int grid_idx = i;
-        for (int l = 0; l < 3; l++) {
-            int count = grid_sizes[l] * grid_sizes[l];
-            if (i < offsets[l] + count) {
-                level = l;
-                grid_idx = i - offsets[l];
-                break;
-            }
-        }
-        int stride = strides[level];
-        int grid_size = grid_sizes[level];
-        int grid_y = grid_idx / grid_size;
-        int grid_x = grid_idx % grid_size;
-
-        const float* row = output + i * row_size;
-
-        // 找到最大类别置信度
+    for (int i = 0; i < n_anchors && num_dets < max_dets; i++) {
+        // 类别分数已 sigmoid, 直接取 max
         float max_cls = 0.0f;
-        int cls_id = 0;
+        int   cls_id  = 0;
         for (int c = 0; c < nc; c++) {
-            float score = sigmoid(row[4 + c]);
-            if (score > max_cls) {
-                max_cls = score;
-                cls_id = c;
-            }
+            float s = get(i, 4 + c);
+            if (s > max_cls) { max_cls = s; cls_id = c; }
         }
         if (max_cls < conf_thres) continue;
 
-        // YOLOv8 解码 (anchor-free)
-        float cx = (sigmoid(row[0]) + (float)grid_x) * (float)stride;
-        float cy = (sigmoid(row[1]) + (float)grid_y) * (float)stride;
-        float w  = expf(row[2]) * (float)stride;
-        float h  = expf(row[3]) * (float)stride;
+        // bbox 已 decode, 是模型输入分辨率下的像素坐标
+        float cx = get(i, 0);
+        float cy = get(i, 1);
+        float w  = get(i, 2);
+        float h  = get(i, 3);
 
         float x1 = cx - w * 0.5f;
         float y1 = cy - h * 0.5f;
         float x2 = cx + w * 0.5f;
         float y2 = cy + h * 0.5f;
 
+        // letterbox → 原图 → 归一化
         rescale_bbox(x1, y1, x2, y2, pad_left, pad_top, scale, img_w, img_h);
 
         AlgoDetection& det = dets[num_dets];
